@@ -22,6 +22,7 @@ import com.health.openscale.core.bluetooth.scales.AAAxHandler
 import com.health.openscale.core.bluetooth.scales.HealthKeep280Handler
 import com.health.openscale.core.bluetooth.scales.AiLinkBroadcastHandler
 import com.health.openscale.core.bluetooth.scales.ActiveEraBF06Handler
+import com.health.openscale.core.bluetooth.scales.AfuA1Handler
 import com.health.openscale.core.bluetooth.scales.AfuB1Handler
 import com.health.openscale.core.bluetooth.scales.BeurerBF450Handler
 import com.health.openscale.core.bluetooth.scales.BeurerSanitasHandler
@@ -217,6 +218,7 @@ object ScaleCatalog {
         device("LEFU_SCALE CF376", uuid16(0x181D), uuid16(0x181C)) claimedBy PlainSigScaleHandler::class.java,
         device("HEALTHKEEP 280") claimedBy HealthKeep280Handler::class.java,
         device("AE BS-06") claimedBy ActiveEraBF06Handler::class.java,
+        device("AFU-WL-TZ-A1") claimedBy AfuA1Handler::class.java,
         device("AFU-BH-TZ-B1", uuid16(0xFC50)) claimedBy AfuB1Handler::class.java,
         device("Keep_S3") claimedBy KeepS3Handler::class.java,
         device("PICOOC-CQ") claimedBy PicoocHandler::class.java,

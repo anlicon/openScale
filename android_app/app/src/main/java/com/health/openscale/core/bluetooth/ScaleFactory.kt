@@ -23,6 +23,7 @@ import com.health.openscale.core.bluetooth.scales.HealthKeep280Handler
 import com.health.openscale.core.bluetooth.scales.BeurerBF450Handler
 import com.health.openscale.core.bluetooth.scales.ScaleDeviceHandler
 import com.health.openscale.core.bluetooth.scales.AAAxHandler
+import com.health.openscale.core.bluetooth.scales.AfuA1Handler
 import com.health.openscale.core.bluetooth.scales.AfuB1Handler
 import com.health.openscale.core.bluetooth.scales.AiLinkBroadcastHandler
 import com.health.openscale.core.bluetooth.scales.FitTrackDaraHandler
@@ -148,6 +149,7 @@ class ScaleFactory @Inject constructor(
             // Exact PICOOC-L match must precede ScaleupHandler's generic 0xD0 manufacturer match.
             PicoocBroadcastHandler(),
             ActiveEraBF06Handler(),
+            AfuA1Handler(),
             AfuB1Handler(),
             KeepS3Handler(),
             OmronWlcHandler(),
