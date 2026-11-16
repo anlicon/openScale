@@ -276,6 +276,16 @@ class BluetoothScannerManager(
             val existingDevice = deviceMap[newDevice.address]
             var listShouldBeUpdated = false
 
+            // First sighting of a device is logged once per scan: when a scale "cannot be
+            // found" this line decides whether it advertised at all, and under which name.
+            if (existingDevice == null) {
+                LogManager.d(
+                    TAG,
+                    "Seen: '${newDevice.name}' ${newDevice.address} rssi=${newDevice.rssi} " +
+                        "uuids=${newDevice.serviceUuids.size} supported=${newDevice.isSupported}"
+                )
+            }
+
             if (existingDevice != null) {
                 // Update criteria: if RSSI changed, or if key device info (name, support, handler, services, manufacturer data) has improved or changed.
                 val nameChangedToKnown = newDevice.name.isNotEmpty() && existingDevice.name.isEmpty()

@@ -67,6 +67,12 @@ object AfuA1Lib {
             val stable: Boolean,
             val batteryPercent: Int?,
             val charging: Boolean?,
+            /**
+             * mode 2 streams a 0..100 value that jumps around during a weigh-in; on real
+             * hardware it moves 100 -> 10 -> 100 within one second, so it is the measuring
+             * progress, not the battery level.
+             */
+            val progressPercent: Int?,
             val mode: Int,
             val algType: Int,
         ) : ScaleEvent()
@@ -77,6 +83,24 @@ object AfuA1Lib {
             /** Normalised resistance values (ohms); the first usable one feeds the BIA formula. */
             val resistances: List<Double>,
             val weightKg: Double?,
+            val algType: Int,
+        ) : ScaleEvent()
+
+        /**
+         * A weigh-in the scale stored while no phone was connected (0xD8). The scale pushes
+         * its pending records right after a session starts, which is the only way to recover
+         * measurements taken without the app.
+         */
+        data class History(
+            /** Epoch seconds as stamped by the scale. */
+            val timeSeconds: Long,
+            val weightG: Int,
+            val weightKg: Double,
+            val stable: Boolean,
+            /** Raw ADC channels of that record, already normalised to ohms. */
+            val resistances: List<Double>,
+            val heartRate: Int?,
+            val historyType: Int,
             val algType: Int,
         ) : ScaleEvent()
 
@@ -167,6 +191,7 @@ object AfuA1Lib {
             return when (packetType) {
                 PACKET_WEIGHT -> listOfNotNull(decodeWeight(payload))
                 PACKET_ADC -> decodeAdc(payload)
+                PACKET_HISTORY -> decodeHistory(payload)
                 else -> listOf(ScaleEvent.Unknown("type=0x${packetType.toString(16)}", payload.toHex()))
             }
         }
@@ -183,12 +208,15 @@ object AfuA1Lib {
 
         var battery: Int? = null
         var charging: Boolean? = null
+        var progress: Int? = null
         if (mode == 1 && p.size >= 9) {
             charging = bit(p[7].toInt() and 0xFF, 7) == 1
             battery = p[7].toInt() and 0x7F
         } else if (mode == 2 && p.size >= 11) {
+            // mode 2 does not carry the battery level: the byte that looks like it counts
+            // 0..100 and swings back and forth while the load cell settles.
             charging = bit(p[10].toInt() and 0xFF, 7) == 1
-            battery = p[10].toInt() and 0x7F
+            progress = p[10].toInt() and 0x7F
         }
 
         val wf = weightFields(encoded)
@@ -199,6 +227,7 @@ object AfuA1Lib {
             stable = wf.state,
             batteryPercent = battery,
             charging = charging,
+            progressPercent = progress,
             mode = mode,
             algType = if (p.size >= 2) p[p.size - 2].toInt() and 0xFF else 0,
         )
@@ -227,6 +256,113 @@ object AfuA1Lib {
         val resistances = normalizeImpedances(adcs, weightKg)
         val algType = if (p.size >= 2) p[p.size - 2].toInt() and 0xFF else 0
         return listOf(ScaleEvent.Impedance(adcs, resistances, weightKg, algType))
+    }
+
+    /**
+     * 0xD8 stores a weigh-in the scale took while no phone was connected.
+     *
+     * Layout (verified against a real A1 record `29 01 6A FB 35 CD 80 69 00 72 ...`, which
+     * decodes to 2026-11-17 00:56:45 / 65.65 kg, and against the reference implementation):
+     *   [0] device type, [1] history type, [2..5] epoch seconds, [6..9] encoded weight,
+     *   then by type: 0 -> hr, adc count, adcs | 2 -> remaining count, adc count, adcs |
+     *   other -> two adcs and two padding bytes, [n] alg type, [n+1] unit.
+     *
+     * Records are parsed defensively: a truncated tail only drops the optional fields, the
+     * weight and timestamp are still returned.
+     */
+    private fun decodeHistory(p: ByteArray): List<ScaleEvent> {
+        if (p.size < 10) return emptyList()
+        val devType = p[0].toInt() and 0xFF
+        var offset = 1
+        var historyType = 0
+
+        if (devType != 42) {
+            if (offset + 9 > p.size) return emptyList()
+            historyType = p[offset].toInt() and 0xFF
+            offset++
+        }
+
+        val timeSeconds = u32(p, offset).toLong() and 0xFFFFFFFFL
+        offset += 4
+        if (offset + 4 > p.size) return emptyList()
+        val wf = weightFields(u32(p, offset))
+        offset += 4
+
+        var heartRate: Int? = null
+        var algType = 0
+        val adcs = mutableListOf<Double>()
+
+        if (devType == 42) {
+            if (offset + 2 <= p.size) {
+                adcs += u16(p, offset).toDouble()
+                offset += 2
+            }
+            offset += 4
+            if (offset < p.size) {
+                heartRate = p[offset].toInt() and 0xFF
+                offset++
+            }
+            if (offset < p.size) algType = p[offset].toInt() and 0xFF
+        } else {
+            when (historyType) {
+                0 -> {
+                    // hr, then channel count, then the channels.
+                    offset += 2
+                    if (offset < p.size) {
+                        heartRate = p[offset].toInt() and 0xFF
+                        offset++
+                    }
+                    if (offset < p.size) {
+                        val count = p[offset].toInt() and 0xFF
+                        offset++
+                        repeat(count) {
+                            if (offset + 2 <= p.size) {
+                                adcs += u16(p, offset).toDouble()
+                                offset += 2
+                            }
+                        }
+                    }
+                }
+
+                2 -> {
+                    // remaining-record count, then channel count, then the channels.
+                    if (offset + 1 < p.size) {
+                        val count = p[offset + 1].toInt() and 0xFF
+                        offset += 2
+                        repeat(count) {
+                            if (offset + 2 <= p.size) {
+                                adcs += u16(p, offset).toDouble()
+                                offset += 2
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    repeat(2) {
+                        if (offset + 2 <= p.size) {
+                            adcs += u16(p, offset).toDouble()
+                            offset += 2
+                        }
+                    }
+                    offset += 2
+                }
+            }
+            if (offset < p.size) algType = p[offset].toInt() and 0xFF
+        }
+
+        return listOf(
+            ScaleEvent.History(
+                timeSeconds = timeSeconds,
+                weightG = wf.weightG,
+                weightKg = wf.weightKg,
+                stable = wf.state,
+                resistances = normalizeImpedances(adcs, wf.weightKg),
+                heartRate = heartRate,
+                historyType = historyType,
+                algType = algType,
+            )
+        )
     }
 
     // ----------------------------------------------------------------------------

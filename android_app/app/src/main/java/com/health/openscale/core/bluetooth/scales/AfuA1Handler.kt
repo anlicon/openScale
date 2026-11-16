@@ -79,6 +79,19 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // nothing. Always release the scale after this long.
         private const val CONNECT_TIMEOUT_MS = 60_000L
 
+        // 0xD8 records the scale pushes on connect. The same record is repeated a few times
+        // per session, and it is pushed again on every later session, so imported keys are
+        // remembered across sessions (driver settings) and skipped when seen again.
+        private const val HISTORY_KEY_PREF = "importedHistory"
+        private const val HISTORY_KEY_LIMIT = 40
+
+        // A record stamped inside this window is the weigh-in being streamed live right now;
+        // importing it as well would create a second row for the same event.
+        private const val HISTORY_LIVE_WINDOW_S = 180L
+
+        // Anything before 2020 is a decoding artefact, not a stored measurement.
+        private const val MIN_PLAUSIBLE_EPOCH = 1_600_000_000L
+
         private fun uuid16Static(short: Int): UUID =
             UUID.fromString(String.format("0000%04x-0000-1000-8000-00805f9b34fb", short))
     }
@@ -93,6 +106,9 @@ class AfuA1Handler : ScaleDeviceHandler() {
     @Volatile private var published = false
     private var publishJob: Job? = null
     private var watchdogJob: Job? = null
+
+    /** Epoch seconds of the current session, used to separate live data from stored records. */
+    private var sessionStartEpochSec = 0L
 
     override fun supportFor(device: ScannedDeviceInfo): DeviceSupport? {
         val name = device.name.trim().uppercase(Locale.ROOT)
@@ -120,6 +136,7 @@ class AfuA1Handler : ScaleDeviceHandler() {
     override fun onConnected(user: ScaleUser) {
         resetSession()
         decoder.reset()
+        sessionStartEpochSec = System.currentTimeMillis() / 1000L
 
         // 1) Subscribe to the measurement stream.
         setNotifyOn(SERVICE, CHAR_NOTIFY)
@@ -167,6 +184,7 @@ class AfuA1Handler : ScaleDeviceHandler() {
             when (event) {
                 is ScaleEvent.Weight -> onWeight(event, user)
                 is ScaleEvent.Impedance -> onImpedance(event, user)
+                is ScaleEvent.History -> onHistory(event, user)
                 is ScaleEvent.Unknown -> logI("AfuA1: unhandled ${event.kind} ${event.payloadHex}")
             }
         }
@@ -179,7 +197,8 @@ class AfuA1Handler : ScaleDeviceHandler() {
         logI(
             "AfuA1: weight ${String.format(Locale.US, "%.2f", w.weightKg)}kg " +
                 "stable=${w.stable} mode=${w.mode} alg=0x${w.algType.toString(16)}" +
-                (w.batteryPercent?.let { " batt=$it%" } ?: "")
+                (w.batteryPercent?.let { " batt=$it%" } ?: "") +
+                (w.progressPercent?.let { " progress=$it%" } ?: "")
         )
         // Impedance normally follows the stable weight; arm a short timeout so a bare
         // weight-only scale (or a failed impedance read) still produces a measurement.
@@ -244,23 +263,7 @@ class AfuA1Handler : ScaleDeviceHandler() {
         }
 
         if (resistance != null) {
-            measurement[MeasurementType.IMPEDANCE] = Ohm(resistance.toFloat())
-            val comp = AfuA1Lib.estimateBodyComposition(
-                weightKg = weightKg,
-                heightCm = user.bodyHeight.toDouble(),
-                age = user.age,
-                male = user.gender == GenderType.MALE,
-                resistances = lastResistances,
-            )
-            if (comp != null) {
-                measurement[MeasurementType.BODY_FAT] = Percent(comp.bodyFatPercent.toFloat())
-                measurement[MeasurementType.WATER] = Percent(comp.waterPercent.toFloat())
-                measurement[MeasurementType.MUSCLE] = Percent(comp.musclePercent.toFloat())
-                measurement[MeasurementType.BONE] = Kg(comp.boneMassKg.toFloat())
-                measurement[MeasurementType.PROTEIN] = Percent(comp.proteinPercent.toFloat())
-                measurement[MeasurementType.LBM] = Kg(comp.fatFreeMassKg.toFloat())
-                // BMR / BMI are derived by openScale itself; do not write them here.
-            }
+            applyBodyComposition(measurement, weightKg, resistance, lastResistances, user)
         } else if (lastResistances.isNotEmpty()) {
             logW("AfuA1: impedance received but no value in 100..1500 ohm window: $lastResistances")
         }
@@ -272,6 +275,93 @@ class AfuA1Handler : ScaleDeviceHandler() {
         watchdogJob?.cancel()
         watchdogJob = null
         requestDisconnect()
+    }
+
+    /**
+     * A weigh-in the scale kept while no phone was connected. The protocol only stores the
+     * raw weight plus (sometimes) the impedance channels, so body composition is rebuilt
+     * here exactly like a live measurement - what is missing is the vendor cloud's extra
+     * metrics (visceral fat, body age), which the scale never transmits.
+     */
+    private fun onHistory(h: ScaleEvent.History, user: ScaleUser) {
+        if (h.weightKg <= 0.0 || h.weightG <= 0) return
+
+        if (h.timeSeconds < MIN_PLAUSIBLE_EPOCH) {
+            logW("AfuA1: history with implausible timestamp ${h.timeSeconds} - ignored")
+            return
+        }
+        // The record currently being weighed belongs to the live stream.
+        if (h.timeSeconds >= sessionStartEpochSec - HISTORY_LIVE_WINDOW_S) {
+            logI("AfuA1: history ${h.timeSeconds} is the current session - live stream covers it")
+            return
+        }
+
+        val key = "${h.timeSeconds}:${h.weightG}"
+        if (isHistoryImported(key)) {
+            logI("AfuA1: history $key already imported - skipped")
+            return
+        }
+
+        val resistance = AfuA1Lib.firstResistance(h.resistances)
+        logI(
+            "AfuA1: history ${Date(h.timeSeconds * 1000)} " +
+                "${String.format(Locale.US, "%.2f", h.weightKg)}kg " +
+                "R=${resistance ?: "none"} adcs=${h.resistances} " +
+                "hr=${h.heartRate ?: "-"} type=${h.historyType}"
+        )
+
+        val measurement = ScaleMeasurement().apply {
+            userId = user.id
+            dateTime = Date(h.timeSeconds * 1000)
+            this[MeasurementType.WEIGHT] = Kg(h.weightKg.toFloat())
+        }
+        if (resistance != null) {
+            applyBodyComposition(measurement, h.weightKg, resistance, h.resistances, user)
+        }
+
+        rememberHistory(key)
+        publish(measurement)
+    }
+
+    /** Writes impedance plus every body-composition value this scale's data supports. */
+    private fun applyBodyComposition(
+        measurement: ScaleMeasurement,
+        weightKg: Double,
+        resistance: Double,
+        resistances: List<Double>,
+        user: ScaleUser,
+    ) {
+        measurement[MeasurementType.IMPEDANCE] = Ohm(resistance.toFloat())
+        val comp = AfuA1Lib.estimateBodyComposition(
+            weightKg = weightKg,
+            heightCm = user.bodyHeight.toDouble(),
+            age = user.age,
+            male = user.gender == GenderType.MALE,
+            resistances = resistances,
+        ) ?: return
+        measurement[MeasurementType.BODY_FAT] = Percent(comp.bodyFatPercent.toFloat())
+        measurement[MeasurementType.WATER] = Percent(comp.waterPercent.toFloat())
+        measurement[MeasurementType.MUSCLE] = Percent(comp.musclePercent.toFloat())
+        measurement[MeasurementType.BONE] = Kg(comp.boneMassKg.toFloat())
+        measurement[MeasurementType.PROTEIN] = Percent(comp.proteinPercent.toFloat())
+        measurement[MeasurementType.LBM] = Kg(comp.fatFreeMassKg.toFloat())
+        // BMR / BMI are derived by openScale itself; do not write them here.
+    }
+
+    private fun importedHistoryKeys(): List<String> =
+        runCatching { settingsGetString(HISTORY_KEY_PREF) }.getOrNull()
+            .orEmpty()
+            .split(';')
+            .filter { it.isNotBlank() }
+
+    private fun isHistoryImported(key: String): Boolean = key in importedHistoryKeys()
+
+    private fun rememberHistory(key: String) {
+        val keys = importedHistoryKeys().toMutableList()
+        keys.remove(key)
+        keys.add(key)
+        while (keys.size > HISTORY_KEY_LIMIT) keys.removeAt(0)
+        runCatching { settingsPutString(HISTORY_KEY_PREF, keys.joinToString(";")) }
     }
 
     private fun resetSession() {
