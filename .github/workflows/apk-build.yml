@@ -1,0 +1,47 @@
+# 放到 openScale 仓库的 .github/workflows/ 目录下即可。
+# 推送后 GitHub 会用云端 JDK 21 + Gradle 编译出带 AFU A1 驱动的 debug APK。
+name: Build openScale APK (AFU A1)
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '21'
+
+      # 与官方 CI 完全相同的构建命令，产物路径也一致。
+      - name: Build debug APK
+        working-directory: android_app
+        run: ./gradlew assembleDebug --no-daemon
+
+      # 首选下载方式：Actions 运行页面底部的 Artifacts。
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openScale-AFU-A1-debug
+          path: android_app/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      # 备选下载方式：Release（若因权限失败，上面的 artifact 仍然可用）。
+      - name: Publish APK to Release
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: afu-a1-debug
+          name: openScale + AFU A1 driver (debug)
+          body: 自动编译版本，包含蚂蚁阿福沃莱 A1 体脂秤驱动，仅供真机调试。
+          files: android_app/app/build/outputs/apk/debug/*.apk
