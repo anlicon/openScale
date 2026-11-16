@@ -38,6 +38,7 @@ import com.welie.blessed.GattStatus
 import com.welie.blessed.HciStatus
 import com.welie.blessed.WriteType
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -80,6 +81,13 @@ class GattScaleAdapter(
     private val ioMutex = Mutex()
 
     private var connectAttempts = 0
+
+    // Fallback link handling: body-fat scales advertise only for a short window after they
+    // are woken up, so a plain address scan regularly sees nothing at all. After
+    // [BleGattTuning.scanPhaseTimeoutMs] we park a non-timing-out autoConnect instead.
+    private var pendingPeripheral: BluetoothPeripheral? = null
+    private var autoConnectActive = false
+    private var autoConnectJob: Job? = null
 
     init {
         // Worker coroutine processes queued BLE operations sequentially
@@ -129,6 +137,10 @@ class GattScaleAdapter(
         override fun onConnected(peripheral: BluetoothPeripheral) {
             scope.launch {
                 currentPeripheral = peripheral
+                pendingPeripheral = null
+                autoConnectActive = false
+                autoConnectJob?.cancel()
+                autoConnectJob = null
                 _isConnected.value = true
                 _isConnecting.value = false
                 _events.tryEmit(BluetoothEvent.Connected(peripheral.name, peripheral.address))
@@ -138,6 +150,13 @@ class GattScaleAdapter(
         override fun onConnectionFailed(peripheral: BluetoothPeripheral, status: HciStatus) {
             scope.launch {
                 LogManager.e(TAG, "Connection failed ${peripheral.address}: $status")
+                // A pending autoConnect reports failures for links it never established
+                // (the scale was not advertising at that moment). Keep waiting instead of
+                // tearing the whole session down - the next advertisement is the real event.
+                if (autoConnectActive) {
+                    LogManager.w(TAG, "autoConnect attempt failed ($status) - still waiting for ${peripheral.address}")
+                    return@launch
+                }
                 if (connectAttempts < tuning.common.maxRetries) {
                     val nextTry = connectAttempts + 1
                     _events.tryEmit(
@@ -165,6 +184,10 @@ class GattScaleAdapter(
                 runCatching { handler.detach() }
                 lastDisconnectAtMs = SystemClock.elapsedRealtime()
                 if (peripheral.address == targetAddress) {
+                    autoConnectActive = false
+                    autoConnectJob?.cancel()
+                    autoConnectJob = null
+                    pendingPeripheral = null
                     _events.tryEmit(BluetoothEvent.Disconnected(peripheral.address, status.toString()))
                     cleanup()
                 }
@@ -389,10 +412,15 @@ class GattScaleAdapter(
         val waitMs = (tuning.common.reconnectCooldownMs - sinceLastDisconnect).coerceAtLeast(0)
 
         connectAttempts = 0
+        autoConnectActive = false
+        autoConnectJob?.cancel()
+        autoConnectJob = null
+        pendingPeripheral = null
         _isConnected.value = false
         _isConnecting.value = true
 
         runCatching { central.stopScan() }
+        releaseStaleLink(address)
 
         scope.launch {
             if (waitMs > 0) delay(waitMs.milliseconds)
@@ -407,20 +435,86 @@ class GattScaleAdapter(
                     )
                 )
                 cleanup()
+                return@launch
             }
+            armAutoConnectFallback(address)
+        }
+    }
+
+    /**
+     * Body-fat scales stop advertising while a BLE link is open, so a link left behind by a
+     * killed process (or by the vendor app) keeps the scale invisible to every scan. It then
+     * looks like the scale "cannot be found" although it is lying right next to the phone.
+     * Drop whatever link the Bluetooth stack still holds for this address before scanning.
+     */
+    private fun releaseStaleLink(address: String) {
+        runCatching {
+            central.getConnectedPeripherals()
+                .filter { it.address.equals(address, ignoreCase = true) }
+                .forEach {
+                    LogManager.w(TAG, "Dropping stale link to $address before scanning")
+                    central.cancelConnection(it)
+                }
+        }.onFailure { LogManager.w(TAG, "Could not inspect stale links: ${it.message}") }
+    }
+
+    /**
+     * A plain address scan is the fast path: while the scale is advertising it is picked up in
+     * a second or two. Most body-fat scales however only advertise for a few seconds after the
+     * user steps on them, so the scan often returns nothing while the user stares at a
+     * "connecting" spinner.
+     *
+     * After [BleGattTuning.scanPhaseTimeoutMs] we therefore park a pending autoConnect. It does
+     * not time out: the Bluetooth stack keeps looking for the device and brings the link up the
+     * moment the scale starts advertising - typically the instant the user steps on it.
+     */
+    private fun armAutoConnectFallback(address: String) {
+        if (!tuning.useAutoConnectFallback) return
+        autoConnectJob = scope.launch {
+            delay(tuning.scanPhaseTimeoutMs.milliseconds)
+            if (_isConnected.value || !_isConnecting.value) return@launch
+
+            LogManager.i(TAG, "No advertisement for $address after ${tuning.scanPhaseTimeoutMs} ms - parking autoConnect")
+            runCatching { central.stopScan() }
+
+            val peripheral = runCatching { central.getPeripheral(address) }.getOrNull()
+            if (peripheral == null) {
+                LogManager.w(TAG, "autoConnect fallback unavailable: no peripheral for $address")
+                return@launch
+            }
+
+            pendingPeripheral = peripheral
+            autoConnectActive = true
+            _events.tryEmit(
+                BluetoothEvent.DeviceMessage(
+                    context.getString(R.string.bt_info_step_on_scale),
+                    address
+                )
+            )
+            runCatching { central.autoConnect(peripheral, peripheralCallback) }
+                .onFailure { LogManager.e(TAG, "autoConnect failed for $address: ${it.message}", it) }
         }
     }
 
     override fun doDisconnect() {
+        autoConnectJob?.cancel()
+        autoConnectJob = null
+        autoConnectActive = false
         runCatching { if (::central.isInitialized) central.stopScan() }
-        currentPeripheral?.let { runCatching { central.cancelConnection(it) } }
+        // The peripheral may only exist as a pending autoConnect target, in which case
+        // currentPeripheral is still null - cancel it anyway or the stack keeps hunting.
+        val target = currentPeripheral ?: pendingPeripheral
+        target?.let { runCatching { central.cancelConnection(it) } }
         currentPeripheral = null
+        pendingPeripheral = null
     }
 
     override fun close() {
         // Stop accepting new BLE operations and release the Blessed central
         // (its broadcast receivers) before the base cancels the coroutine scope,
         // which terminates the busy-waiting op-queue worker.
+        autoConnectJob?.cancel()
+        autoConnectJob = null
         runCatching { opQueue.close() }
         runCatching { if (::central.isInitialized) central.close() }
         super.close()

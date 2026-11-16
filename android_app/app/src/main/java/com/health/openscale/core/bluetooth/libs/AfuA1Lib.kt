@@ -43,6 +43,12 @@ object AfuA1Lib {
     const val PACKET_HISTORY: Int = 216  // 0xD8
     const val PACKET_SETTING: Int = 223  // 0xDF
 
+    /** Every NOTIFY packet is a fixed 20-byte frame. */
+    const val FRAME_SIZE: Int = 20
+
+    /** Upper bound for packets buffered while waiting for a multi-packet frame. */
+    const val MAX_PENDING_PACKETS: Int = 8
+
     /** Result of feeding one notification packet into [Scale27Decoder.feed]. */
     enum class FeedStatus { IMPERFECT, PERFECT, VERIFY_ERROR, ERROR }
 
@@ -92,6 +98,16 @@ object AfuA1Lib {
         fun reset() = packets.clear()
 
         fun feed(data: ByteArray): FeedResult {
+            // Every notification from this scale is a complete 20-byte frame. A short
+            // notification can never start a frame, and keeping it at the head of the
+            // queue would wedge the decoder for the rest of the session (no weight, no
+            // impedance, never completed -> the scale would be held connected). Drop it.
+            if (data.size < FRAME_SIZE) {
+                return FeedResult(FeedStatus.IMPERFECT, null)
+            }
+            // Never let an unterminated multi-packet setting frame (5 packets) or a lost
+            // packet grow the queue without bound.
+            if (packets.size >= MAX_PENDING_PACKETS) packets.clear()
             packets += data.copyOf()
             val (status, frame) = assemble(packets)
             if (status == FeedStatus.PERFECT || status == FeedStatus.VERIFY_ERROR || status == FeedStatus.ERROR) {
@@ -106,13 +122,13 @@ object AfuA1Lib {
         private fun assemble(list: List<ByteArray>): Pair<FeedStatus, ByteArray?> {
             if (list.isEmpty()) return FeedStatus.IMPERFECT to null
             val first = list[0]
-            if (first.size < 20) return FeedStatus.IMPERFECT to null
+            if (first.size < FRAME_SIZE) return FeedStatus.IMPERFECT to null
 
             // byte 1 holds a sequence/error flag; bit 7 set means the scale reported an error.
             val seqOrFlags = first[1].toInt() and 0xFF
             if (bit(seqOrFlags, 7) == 1) return FeedStatus.ERROR to null
 
-            val body18 = first.copyOfRange(2, 20)
+            val body18 = first.copyOfRange(2, FRAME_SIZE)
             val checksum = (0 until 17).sumOf { body18[it].toInt() and 0xFF } and 0x1F
             val checksumByte = body18[17].toInt() and 0xFF
             val status = if (checksum == (checksumByte and 0x1F)) FeedStatus.PERFECT else FeedStatus.VERIFY_ERROR

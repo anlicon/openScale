@@ -85,7 +85,14 @@ data class BleGattTuning(
     val connectAfterScanDelayMs: Long = 650,
     val requestHighConnectionPriority: Boolean = false,
     val requestMtuBytes: Int = 185,
-    val operationTimeoutMs: Long = 1000
+    val operationTimeoutMs: Long = 1000,
+    // How long the plain address scan is given before switching to a pending autoConnect.
+    // Scales that only advertise for a few seconds after being woken up (most body-fat
+    // scales) are usually missed by a scan, so waiting longer than this is pointless.
+    val scanPhaseTimeoutMs: Long = 8_000,
+    // Keep a non-timing-out autoConnect armed behind the scan so the link comes up the
+    // moment the scale starts advertising, instead of the connect attempt just failing.
+    val useAutoConnectFallback: Boolean = true
 )
 
 // Broadcast scanner tuning

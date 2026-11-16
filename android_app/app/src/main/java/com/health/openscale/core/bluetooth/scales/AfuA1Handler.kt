@@ -38,7 +38,10 @@ import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * Handler for the "蚂蚁阿福 × 沃莱" A1 body-fat scale (AFU-WL-TZ-A1 / FG2508WB).
+ * Handler for the "蚂蚁阿福 × 沃莱" A1 body-fat scale (AFU-WL-TZ-A1 / FG2313UWB-D).
+ *
+ * Verified on real hardware: manufacturer "ICOMON", model FG2313UWB-D, firmware 1.2.2,
+ * GATT service 0xFFB0 with 0xFFB1 (write) / 0xFFB2 (notify).
  *
  * Unlike broadcast scales, this device stays silent about measurements until a GATT
  * connection is established and a 0xAC "time sync + user profile" frame is written to
@@ -63,9 +66,17 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // Scale "device type" for connect-mode boards: subtype(7) | 0x20.
         private const val DEVICE_TYPE = 0x27
 
-        // After the weight is marked stable, the scale sends the impedance frame a moment
-        // later. Wait this long before giving up and publishing weight-only.
-        private const val IMPEDANCE_WAIT_MS = 4_000L
+        // After the weight is marked stable the scale needs several seconds of the user
+        // standing still before it emits the impedance frame (the BIA current has to
+        // settle). 4 s was too short on real hardware, so allow up to 15 s before
+        // falling back to a weight-only measurement.
+        private const val IMPEDANCE_WAIT_MS = 15_000L
+
+        // This scale stops advertising while a BLE link is open. If a session never
+        // completes (the user never steps on, or steps off before the weight stabilises)
+        // the link would otherwise be held forever and every later scan would find
+        // nothing. Always release the scale after this long.
+        private const val CONNECT_TIMEOUT_MS = 60_000L
 
         private fun uuid16Static(short: Int): UUID =
             UUID.fromString(String.format("0000%04x-0000-1000-8000-00805f9b34fb", short))
@@ -80,6 +91,7 @@ class AfuA1Handler : ScaleDeviceHandler() {
     @Volatile private var lastResistances: List<Double> = emptyList()
     @Volatile private var published = false
     private var publishJob: Job? = null
+    private var watchdogJob: Job? = null
 
     override fun supportFor(device: ScannedDeviceInfo): DeviceSupport? {
         val name = device.name.trim().uppercase(Locale.ROOT)
@@ -128,6 +140,17 @@ class AfuA1Handler : ScaleDeviceHandler() {
         writeTo(SERVICE, CHAR_WRITE, frame, withResponse = false)
         logI("AfuA1: profile frame sent (type=0x${DEVICE_TYPE.toString(16)}, sex=$sexValue, age=${user.age}, h=${user.bodyHeight.toInt()}cm)")
 
+        // Safety net: the scale only advertises while it is not connected, so a link that
+        // is never closed makes the device invisible to all future scans. If this session
+        // produces no measurement, drop the link ourselves.
+        watchdogJob = scope.launch {
+            delay(CONNECT_TIMEOUT_MS.milliseconds)
+            if (!published) {
+                logW("AfuA1: no measurement within ${CONNECT_TIMEOUT_MS / 1000}s - releasing the scale")
+                requestDisconnect()
+            }
+        }
+
         userInfo(R.string.bt_info_step_on_scale)
     }
 
@@ -143,7 +166,7 @@ class AfuA1Handler : ScaleDeviceHandler() {
             when (event) {
                 is ScaleEvent.Weight -> onWeight(event, user)
                 is ScaleEvent.Impedance -> onImpedance(event, user)
-                is ScaleEvent.Unknown -> logD("AfuA1: ${event.kind} ${event.payloadHex}")
+                is ScaleEvent.Unknown -> logI("AfuA1: unhandled ${event.kind} ${event.payloadHex}")
             }
         }
     }
@@ -171,10 +194,22 @@ class AfuA1Handler : ScaleDeviceHandler() {
     }
 
     private fun onImpedance(imp: ScaleEvent.Impedance, user: ScaleUser) {
-        if (imp.resistances.isEmpty()) return
+        if (imp.adcs.isEmpty()) return
         imp.weightKg?.let { if (it > 0.0) lastWeightKg = it }
-        lastResistances = imp.resistances
-        logI("AfuA1: impedance raw=${imp.adcs} normalized=${imp.resistances} alg=0x${imp.algType.toString(16)}")
+
+        // The 0xD6 frame only carries a weight field when mode == 1. When it does not, the
+        // >=1500 ADC channels cannot be converted to ohms by the decoder (it has no weight
+        // to de-offset with), so the raw values would be filtered out and the measurement
+        // would end up weight-only. Re-normalise using the last stable weight from the 0xD5
+        // frame so body composition still works.
+        val effectiveWeight = lastWeightKg ?: imp.weightKg
+        val normalized = AfuA1Lib.normalizeImpedances(imp.adcs, effectiveWeight)
+        lastResistances = normalized
+        logI(
+            "AfuA1: impedance adc=${imp.adcs} norm=$normalized " +
+                "w=${effectiveWeight ?: "null"} alg=0x${imp.algType.toString(16)}"
+        )
+
         // Impedance is normally the last frame. Publish right away once we have BOTH a
         // stable weight and impedance; otherwise let the armed timeout be the fallback
         // (so we never publish an intermediate, non-final weight prematurely).
@@ -213,16 +248,24 @@ class AfuA1Handler : ScaleDeviceHandler() {
                 measurement[MeasurementType.LBM] = Kg(comp.fatFreeMassKg.toFloat())
                 // BMR / BMI are derived by openScale itself; do not write them here.
             }
+        } else if (lastResistances.isNotEmpty()) {
+            logW("AfuA1: impedance received but no value in 100..1500 ohm window: $lastResistances")
         }
         logI("AfuA1: publishing ${String.format(Locale.US, "%.2f", weightKg)}kg" +
             (resistance?.let { ", R=${it}Ω" } ?: " (weight only)"))
         publish(measurement)
+        // Release the scale immediately: while a link is open it stops advertising, so
+        // holding it would break the next scan.
+        watchdogJob?.cancel()
+        watchdogJob = null
         requestDisconnect()
     }
 
     private fun resetSession() {
         publishJob?.cancel()
         publishJob = null
+        watchdogJob?.cancel()
+        watchdogJob = null
         lastWeightKg = null
         lastWeightStable = false
         lastResistances = emptyList()

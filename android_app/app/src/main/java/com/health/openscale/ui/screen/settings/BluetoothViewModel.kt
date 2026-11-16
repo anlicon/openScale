@@ -54,7 +54,10 @@ class BluetoothViewModel @Inject constructor(
     private val settingsFacade: SettingsFacade
 ) : ViewModel() {
 
-    companion object { private const val SCAN_DURATION_MS = 20_000L }
+    // Body-fat scales only advertise for a short window after being woken up (someone
+    // standing on them). A 20 s window misses them most of the time because the user has
+    // not stepped on yet when the scan starts, so keep the radio listening long enough.
+    companion object { private const val SCAN_DURATION_MS = 45_000L }
 
     // --- Exposed state from facade ---
     val scannedDevices = bt.scannedDevices
