@@ -409,8 +409,12 @@ object AfuA1Lib {
     )
 
     /** Pick the first resistance in the physiologically plausible 100..1500 ohm window. */
+    /** Plausible body impedance window in ohms; anything outside is not a measurement. */
+    const val MIN_RESISTANCE_OHM: Double = 100.0
+    const val MAX_RESISTANCE_OHM: Double = 1500.0
+
     fun firstResistance(resistances: List<Double>): Double? =
-        resistances.firstOrNull { it >= 100.0 && it <= 1500.0 }
+        resistances.firstOrNull { it >= MIN_RESISTANCE_OHM && it <= MAX_RESISTANCE_OHM }
 
     /**
      * Estimate body composition locally. These are model-derived estimates, NOT fields

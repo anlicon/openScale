@@ -66,11 +66,12 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // Scale "device type" for connect-mode boards: subtype(7) | 0x20.
         private const val DEVICE_TYPE = 0x27
 
-        // After the weight is marked stable the scale needs several seconds of the user
-        // standing still before it emits the impedance frame (the BIA current has to
-        // settle). 4 s was too short on real hardware, so allow up to 15 s before
-        // falling back to a weight-only measurement.
-        private const val IMPEDANCE_WAIT_MS = 15_000L
+        // After the weight is marked stable the scale emits its first 0xD6 impedance frame
+        // after ~4 s, but that frame still carries adc=[0,0]; the BIA channels only fill in
+        // on a later frame. So this is not just "wait for the first 0xD6" - we keep the
+        // session open until a frame with a usable resistance shows up, and only give up
+        // (weight-only) after this long.
+        private const val IMPEDANCE_WAIT_MS = 20_000L
 
         // This scale stops advertising while a BLE link is open. If a session never
         // completes (the user never steps on, or steps off before the weight stabilises)
@@ -204,11 +205,23 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // frame so body composition still works.
         val effectiveWeight = lastWeightKg ?: imp.weightKg
         val normalized = AfuA1Lib.normalizeImpedances(imp.adcs, effectiveWeight)
-        lastResistances = normalized
+        val usable = normalized.filter { it in AfuA1Lib.MIN_RESISTANCE_OHM..AfuA1Lib.MAX_RESISTANCE_OHM }
         logI(
-            "AfuA1: impedance adc=${imp.adcs} norm=$normalized " +
+            "AfuA1: impedance adc=${imp.adcs} norm=$normalized usable=$usable " +
                 "w=${effectiveWeight ?: "null"} alg=0x${imp.algType.toString(16)}"
         )
+
+        // The scale sends its first impedance frame right after the weight stabilises, but
+        // the BIA channels are still zero in that frame - the real values arrive in a later
+        // one. Publishing on the first frame therefore always produced weight-only records
+        // (a complete 0xD6 with adc=[0.0, 0.0] was captured on real hardware, followed by
+        // our immediate disconnect). Keep the session open and wait for a frame that
+        // actually carries a resistance; the armed timeout below is the fallback.
+        if (usable.isEmpty()) {
+            logW("AfuA1: impedance frame without usable channels (adc=${imp.adcs}) - waiting for the next one")
+            return
+        }
+        lastResistances = normalized
 
         // Impedance is normally the last frame. Publish right away once we have BOTH a
         // stable weight and impedance; otherwise let the armed timeout be the fallback
