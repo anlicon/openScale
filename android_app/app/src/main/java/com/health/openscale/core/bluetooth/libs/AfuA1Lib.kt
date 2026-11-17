@@ -565,7 +565,7 @@ object AfuA1Lib {
     ): BodyComposition? {
         if (weightKg <= 0.0 || heightCm <= 0.0 || age <= 0) return null
         val resistance = firstResistance(resistances)
-        val (baseFat, model, ffm) = if (resistance != null) {
+        val (baseFat, model, _) = if (resistance != null) {
             val (f, m) = segalFfm(weightKg, heightCm, age, male, resistance)
             val clampedFfm = f.coerceIn(weightKg * 0.35, weightKg * 0.97)
             Triple(100.0 * (weightKg - clampedFfm) / weightKg, m, clampedFfm)
@@ -597,7 +597,10 @@ object AfuA1Lib {
             resistanceOhm = resistance,
             bodyFatPercent = round1(bf),
             fatMassKg = round1(fatMass),
-            fatFreeMassKg = round1(ffm),
+            // Derive LBM from the clamped body fat, not from the raw Segal FFM: when bf is
+            // clamped (e.g. <8 % for women or >60 % for anyone) the two would no longer add
+            // up to 100 %, and the stored LBM would contradict the stored body-fat percentage.
+            fatFreeMassKg = round1(weightKg - fatMass),
             musclePercent = round1(musclePct),
             muscleMassKg = round1(weightKg * musclePct / 100.0),
             waterPercent = round1(waterPct),
