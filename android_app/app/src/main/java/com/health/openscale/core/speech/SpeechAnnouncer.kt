@@ -18,6 +18,8 @@
 package com.health.openscale.core.speech
 
 import android.content.Context
+import android.content.Intent
+import android.media.AudioAttributes
 import android.speech.tts.TextToSpeech
 import androidx.annotation.StringRes
 import com.health.openscale.core.utils.LogManager
@@ -114,10 +116,62 @@ object SpeechAnnouncer {
         speak(text)
     }
 
+    /** Creates the engine without speaking, e.g. so the settings screen can probe it. */
+    fun ensureEngine() {
+        if (!engineRequested) requestEngine()
+    }
+
+    /** True once the engine is initialised and has a usable voice. */
+    fun isReady(): Boolean = ready
+
+    /** True when the engine definitively cannot be used (no engine / no voice data). */
+    fun isUnavailable(): Boolean = !usable
+
+    /**
+     * Speaks [resId] even when the setting is off - the user just flipped the switch and
+     * expects to hear something. Also the cheapest way to prove the engine works.
+     */
+    fun speakSample(@StringRes resId: Int) {
+        val context = appContext ?: return
+        val text = runCatching { context.getString(resId) }.getOrNull() ?: return
+        scope.launch {
+            if (!usable) return@launch
+            if (!engineRequested) requestEngine()
+            if (!ready || engine == null) {
+                pending.clear()
+                pending.addLast(text)
+                return@launch
+            }
+            utter(text)
+        }
+    }
+
     private fun requestEngine() {
         val app = appContext ?: return
         engineRequested = true
-        engine = TextToSpeech(app) { status -> onEngineInitialized(status) }
+        engine = TextToSpeech(app) { status -> onEngineInitialized(status) }.also { tts ->
+            applyAudioAttributes(tts)
+        }
+    }
+
+    /**
+     * Routes speech to the assistant stream. Without an explicit usage the engine may render
+     * onto a stream the phone has muted or turned down (notification volume, "media" at 0 while
+     * a call is active), which looks exactly like a broken announcer.
+     *
+     * Called again once the engine is initialised: whether the attributes survive the service
+     * binding differs between engines, and the call is free, so setting them twice is cheaper
+     * than debugging a silent app.
+     */
+    private fun applyAudioAttributes(tts: TextToSpeech) {
+        runCatching {
+            tts.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+        }
     }
 
     private fun onEngineInitialized(status: Int) {
@@ -125,10 +179,31 @@ object SpeechAnnouncer {
             usable = false
             ready = false
             pending.clear()
-            LogManager.w(TAG, "No usable TTS engine (status=$status) - announcements disabled")
+            LogManager.w(
+                TAG,
+                "No usable TTS engine (status=$status, visible engines=${visibleEngineCount()}) - announcements disabled"
+            )
             return
         }
         scope.launch { activateEngine() }
+    }
+
+    /**
+     * How many TTS services this process is allowed to see, or -1 if it cannot be counted.
+     *
+     * Zero is the interesting case: the engine is installed but invisible to us, which is a
+     * `<queries>` problem in the manifest and not a broken engine. `TextToSpeech.getEngines()`
+     * cannot answer it - it only lists engines the same visibility rules already allowed.
+     */
+    @Suppress("DEPRECATION")
+    private fun visibleEngineCount(): Int {
+        val context = appContext ?: return -1
+        return runCatching {
+            context.packageManager.queryIntentServices(
+                Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE),
+                0
+            ).size
+        }.getOrDefault(-1)
     }
 
     private suspend fun activateEngine() {
@@ -160,6 +235,7 @@ object SpeechAnnouncer {
         }
 
         runCatching {
+            applyAudioAttributes(tts)
             tts.setSpeechRate(1.0f)
             tts.setPitch(1.0f)
         }

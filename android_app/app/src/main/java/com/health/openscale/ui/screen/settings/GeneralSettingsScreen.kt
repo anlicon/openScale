@@ -90,6 +90,7 @@ import androidx.core.content.ContextCompat
 import com.health.openscale.R
 import com.health.openscale.core.data.MeasurementTypeIcon
 import com.health.openscale.core.data.SupportedLanguage
+import com.health.openscale.core.speech.SpeechAnnouncer
 import com.health.openscale.core.utils.LocaleUtils
 import com.health.openscale.core.utils.LogManager
 import com.health.openscale.ui.screen.dialog.TimeInputDialog
@@ -434,14 +435,20 @@ fun GeneralSettingsScreen(
             summary = stringResource(R.string.settings_speech_summary),
             checked = speechEnabled,
             onCheckedChange = { enabled ->
+                // Start the engine before the switch settles: the first utterance is created
+                // 100-300 ms after init, so probing here makes the sample audible right away.
+                if (enabled) SpeechAnnouncer.ensureEngine()
                 scope.launch {
                     sharedViewModel.setSpeechOnMeasurement(enabled)
                     sharedViewModel.showSnackbar(
                         if (enabled)
-                            resources.getString(R.string.settings_speech_enabled_snackbar)
+                            resources.getString(R.string.settings_speech_enabled_hint)
                         else
                             resources.getString(R.string.settings_speech_disabled_snackbar)
                     )
+                    // Speak a sample so the user immediately learns whether the engine works,
+                    // instead of finding out on the next weigh-in with mute hardware.
+                    if (enabled) SpeechAnnouncer.speakSample(R.string.speech_sample)
                 }
             }
         )

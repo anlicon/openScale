@@ -167,6 +167,7 @@ fun rememberBluetoothActionButton(
             // 2. No scale paired yet
             savedAddr == null -> TopBarAction(
                 icon = Icons.Default.Bluetooth,
+                label = resources.getString(R.string.bt_status_disconnected),
                 contentDescription = resources.getString(R.string.bluetooth_action_no_scale_saved_desc),
                 onClick = {
                     sharedViewModel.setPendingReferenceUserForBle(null)
@@ -200,6 +201,7 @@ fun rememberBluetoothActionButton(
             connStatus == ConnectionStatus.CONNECTED -> TopBarAction(
                 icon = Icons.Filled.BluetoothConnected,
                 tint = developerModeTint,
+                label = resources.getString(R.string.bt_status_connected),
                 contentDescription = withDeveloperNote(
                     resources.getString(R.string.bluetooth_action_disconnect_desc, deviceName)
                 ),
@@ -218,6 +220,7 @@ fun rememberBluetoothActionButton(
             connStatus == ConnectionStatus.FAILED -> TopBarAction(
                 icon = Icons.Filled.BluetoothDisabled,
                 tint = failureTint,
+                label = resources.getString(R.string.bt_status_disconnected),
                 contentDescription = resources.getString(R.string.bluetooth_action_retry_connection_desc, deviceName),
                 onClick = {
                     sharedViewModel.showSnackbar(
@@ -232,6 +235,7 @@ fun rememberBluetoothActionButton(
             else -> TopBarAction(
                 icon = Icons.Filled.BluetoothDisabled,
                 tint = developerModeTint,
+                label = resources.getString(R.string.bt_status_disconnected),
                 contentDescription = withDeveloperNote(
                     resources.getString(R.string.bluetooth_action_disconnect_desc, deviceName)
                 ),

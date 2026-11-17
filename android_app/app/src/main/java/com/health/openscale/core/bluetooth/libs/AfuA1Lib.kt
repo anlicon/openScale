@@ -579,10 +579,17 @@ object AfuA1Lib {
         val fatMass = weightKg * bf / 100.0
         val lean = 100.0 - bf
         val bonePct = if (male) 4.5 else 4.0
-        val musclePct = (lean - bonePct).coerceIn(20.0, 95.0)
+        // Skeletal muscle mass — Janssen et al. 2000 (J Appl Physiol 89:81-88), the reference
+        // openScale evaluates MUSCLE against. "Lean minus bone" would be ~85 % and always trip the
+        // plausibility check, because openScale's muscle type means skeletal muscle, not fat-free mass.
+        val skeletalMuscleKg = 0.244 * weightKg +
+            7.8 * (heightCm / 100.0) -
+            0.098 * age +
+            (if (male) 6.6 else 0.0) - 3.3
+        val musclePct = (skeletalMuscleKg / weightKg * 100.0).coerceIn(20.0, 60.0)
         val waterPct = (lean * 0.70).coerceIn(25.0, 80.0)
         val proteinPct = (lean * 0.238).coerceIn(5.0, 35.0)
-        val skeletalPct = (musclePct * 0.527).coerceIn(10.0, 70.0)
+        val skeletalPct = musclePct.coerceIn(10.0, 70.0)
         val subcutaneousPct = (bf * 0.72).coerceIn(1.0, bf)
 
         return BodyComposition(

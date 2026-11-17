@@ -351,6 +351,8 @@
     <string name="bt_status_searching">Searching</string>
     <string name="bt_status_waiting_for_scale">Step on</string>
     <string name="bt_status_disconnecting">Closing</string>
+    <string name="bt_status_connected">Connected</string>
+    <string name="bt_status_disconnected">Not connected</string>
     <string name="snackbar_bluetooth_connecting_to">Connecting to %1$s…</string>
     <string name="snackbar_bluetooth_disconnecting_from">Disconnecting from %1$s…</string>
     <string name="snackbar_bluetooth_processing_with">Processing with %1$s…</string>
@@ -662,6 +664,8 @@
     <string name="settings_speech_summary">Announces what the scale is waiting for and the measured weight</string>
     <string name="settings_speech_enabled_snackbar">Voice announcements enabled</string>
     <string name="settings_speech_disabled_snackbar">Voice announcements disabled</string>
+    <string name="settings_speech_enabled_hint">Voice feedback on. If you hear nothing, check the system “Text-to-speech” engine and its Chinese voice data.</string>
+    <string name="speech_sample">Voice feedback is on</string>
     <string name="speech_weight_result">Weight %1$s kilograms</string>
     <string name="speech_measuring_body_fat">Weight recorded. Stand still, measuring body composition.</string>
     <string name="speech_body_fat_timeout">No body composition received. Weight saved.</string>

@@ -752,8 +752,8 @@ fun TableScreen(
 
     // ── Layout ────────────────────────────────────────────────────────────────
     val horizontalScrollState = rememberScrollState()
-    val dateColMin   = 100.dp
-    val dateColMax   = 180.dp
+    val dateColMin   = 116.dp   // "2026年11月17日 (周二)" at bodyMedium needs ~110dp
+    val dateColMax   = 236.dp   // grows to fit the date, one line only
     val colWidth     = 110.dp
     val commentWidth = 250.dp
 
@@ -1044,14 +1044,24 @@ fun TableDataCellInternal(
                     )
                     Spacer(Modifier.width(2.dp))
                 }
-                Text(
-                    text       = fixedText,
-                    style      = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isAggregated) FontWeight.SemiBold else FontWeight.Normal,
-                    textAlign  = alignment,
-                    maxLines   = 2,
-                    overflow   = TextOverflow.Ellipsis,
-                )
+                // One Text per line instead of a single two-line Text: the date may be ellipsised
+                // on a narrow screen, the time below it never is.
+                Column(verticalArrangement = Arrangement.Center) {
+                    fixedText.split('\n').forEachIndexed { index, line ->
+                        Text(
+                            text       = line,
+                            style      = if (index == 0) MaterialTheme.typography.bodyMedium
+                                         else MaterialTheme.typography.bodySmall,
+                            color      = if (index == 0) MaterialTheme.colorScheme.onSurface
+                                         else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = if (isAggregated) FontWeight.SemiBold else FontWeight.Normal,
+                            textAlign  = alignment,
+                            maxLines   = 1,
+                            softWrap   = false,
+                            overflow   = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         } else if (cellData != null) {
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {

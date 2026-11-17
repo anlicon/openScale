@@ -54,6 +54,24 @@ class MeasurementTransformationUseCase @Inject constructor(
 ) {
 
     /**
+     * Body composition describes one weighing, not a preference: a scale that only managed
+     * to weigh must not inherit yesterday's fat percentage, or history claims a body-fat
+     * reading that never happened and the trend flattens out.
+     *
+     * Typed as `Key<*>` on purpose: the constants below are `Key<Percent>`, `Key<Kg>` and
+     * `Key<Float>`, so the least upper bound of the literal has to be stated.
+     */
+    private val DEVICE_COMPOSITION_KEYS: Set<MeasurementType.Key<*>> = setOf(
+        MeasurementType.BODY_FAT,
+        MeasurementType.WATER,
+        MeasurementType.MUSCLE,
+        MeasurementType.LBM,
+        MeasurementType.BONE,
+        MeasurementType.PROTEIN,
+        MeasurementType.VISCERAL_FAT,
+    )
+
+    /**
      * The row id of the WEIGHT type. Resolved from the database — the pre-16 code compared
      * MeasurementValue.typeId against the enum's ordinal, which only worked because WEIGHT
      * happened to be seeded as row 1.
@@ -396,6 +414,9 @@ class MeasurementTransformationUseCase @Inject constructor(
      * - Derived types (BMI, BMR, …) are dropped — they are recomputed from the raw values.
      * - Internal (impedance) and disabled types are dropped: raw device input, stale the moment it
      *   is copied.
+     * - Body composition (fat, water, muscle, bone, protein, visceral fat) is dropped as well: it
+     *   describes the weighing it was measured at, so carrying it over would invent a body-fat
+     *   reading for a weigh-in that only produced a weight.
      *
      * The weight needs no special case: every scale reports one, so on the sync path it is already
      * in [values] and is left alone. Only the form pre-fill passes an empty [values] and therefore
@@ -422,6 +443,11 @@ class MeasurementTransformationUseCase @Inject constructor(
             val type = previousValue.type
             if (type.id in presentTypeIds) return@mapNotNull null
             if (type.isDerived || type.isInternal || !type.isEnabled) return@mapNotNull null
+
+            // A scale result carries body composition only when it actually measured it; the
+            // keys are nullable because handler-contributed and user-created types have none.
+            val typeKey = type.key
+            if (typeKey != null && typeKey in DEVICE_COMPOSITION_KEYS) return@mapNotNull null
 
             when (type.inputType) {
                 InputFieldType.FLOAT -> previousValue.value.floatValue

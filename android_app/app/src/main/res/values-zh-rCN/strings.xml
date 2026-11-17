@@ -181,6 +181,8 @@
     <string name="bt_status_searching">扫描中</string>
     <string name="bt_status_waiting_for_scale">等待上秤</string>
     <string name="bt_status_disconnecting">断开中</string>
+    <string name="bt_status_connected">已连接</string>
+    <string name="bt_status_disconnected">未连接</string>
     <string name="snackbar_bluetooth_connecting_to">正在连接到%1$s…</string>
     <string name="snackbar_bluetooth_disconnecting_from">正在从%1$s断开连接…</string>
     <string name="snackbar_bluetooth_processing_with">正在与%1$s处理…</string>
@@ -341,6 +343,8 @@
     <string name="settings_speech_summary">播报秤正在等待什么，以及测出的体重</string>
     <string name="settings_speech_enabled_snackbar">语音播报已启用</string>
     <string name="settings_speech_disabled_snackbar">语音播报已关闭</string>
+    <string name="settings_speech_enabled_hint">已开启语音播报。如果听不到声音，请检查系统“文字转语音”引擎与中文语音包。</string>
+    <string name="speech_sample">语音播报已开启</string>
     <string name="speech_weight_result">体重 %1$s 公斤</string>
     <string name="speech_measuring_body_fat">体重已记录，请站住不动，正在测量体脂</string>
     <string name="speech_body_fat_timeout">没有收到体脂数据，只保存了体重</string>

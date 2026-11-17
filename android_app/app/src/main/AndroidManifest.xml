@@ -23,6 +23,12 @@
         <package android:name="com.health.openscale.sync.debug" />
         <package android:name="com.health.openscale.sync.oss" />
         <package android:name="com.health.openscale.sync" />
+        <!-- Android 11+ package visibility: without this the app cannot even see the
+             installed text-to-speech engine, so TextToSpeech init fails and every
+             announcement silently degrades to nothing. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application
