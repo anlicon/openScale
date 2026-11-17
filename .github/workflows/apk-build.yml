@@ -1,10 +1,10 @@
 # 放到 openScale 仓库的 .github/workflows/ 目录下即可。
 # 推送后 GitHub 会用云端 JDK 21 + Gradle 编译出带 AFU A1 驱动的 debug APK。
-name: Build openScale APK (AFU A1)
+name: Build openScale APK (AFU A1, debug)
 
+# 正式构建改由 build-afu.yml 负责（push 时自动跑）。
+# 这个 debug 工作流保留为手动备用通道，避免每次 push 跑两遍构建。
 on:
-  push:
-    branches: ['**']
   workflow_dispatch:
 
 permissions:

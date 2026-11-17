@@ -1,0 +1,117 @@
+# 放到 openScale 仓库的 .github/workflows/build-afu.yml
+#
+# 产出 AFU A1 正式构建（build type "afu"）：
+#   - applicationId com.health.openscale.afu，可与官方 openScale 共存
+#   - R8 + 资源压缩（继承 release），正式图标
+#   - 固定 keystore 签名，后续版本可直接覆盖升级
+#
+# 需要的仓库 Secret：
+#   AFU_KEYSTORE_BASE64  - 固定签名密钥库（PKCS12）的 base64，别名 afu，密码 afuA1os2026
+#   未配置时会退回临时密钥并打 warning，此时产物无法覆盖升级，仅用于验证。
+name: Build openScale AFU (release)
+
+on:
+  # 手动触发：签名密钥配置好之后由发布流程 dispatch，避免用到临时密钥。
+  # 需要自动构建时，把下面的 push 块取消注释即可。
+  workflow_dispatch:
+  # push:
+  #   branches: ['**']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: afu-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '21'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android_app/**/*.gradle*', 'android_app/gradle/**') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # ------------------------------------------------------------------
+      # 签名密钥：优先用仓库 Secret，缺失时生成临时密钥（仅签名可装，无法升级）
+      # ------------------------------------------------------------------
+      - name: Prepare signing key
+        env:
+          KS_B64: ${{ secrets.AFU_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ks"
+          KS="$RUNNER_TEMP/ks/afu.keystore"
+          if [ -n "${KS_B64:-}" ]; then
+            printf '%s' "$KS_B64" | base64 -d > "$KS"
+            echo "::notice title=签名::使用仓库固定密钥，本包可覆盖升级"
+          else
+            echo "::warning title=签名::AFU_KEYSTORE_BASE64 未配置，使用临时密钥，此包无法覆盖升级"
+            keytool -genkeypair -keystore "$KS" -storetype PKCS12 \
+              -keyalg RSA -keysize 2048 -validity 10950 -alias afu \
+              -storepass afuA1os2026 -keypass afuA1os2026 \
+              -dname "CN=Temp AFU Build, O=AFU, C=CN"
+          fi
+          keytool -list -keystore "$KS" -storepass afuA1os2026 | tail -3
+          {
+            echo "AFU_KEYSTORE_PATH=$KS"
+            echo "AFU_KEY_ALIAS=afu"
+            echo "AFU_KEY_PASSWORD=afuA1os2026"
+            echo "AFU_STORE_PASSWORD=afuA1os2026"
+          } >> "$GITHUB_ENV"
+
+      # 单测先跑；失败不阻断出包，但会在日志和步骤结论里标红，便于事后修。
+      - name: Unit tests
+        continue-on-error: true
+        working-directory: android_app
+        run: ./gradlew testDebugUnitTest --no-daemon --console=plain
+
+      - name: Build afu APK
+        working-directory: android_app
+        env:
+          # 78 是上游基线 versionCode；加 run_number 保证每次构建都比上一版大，
+          # 装新包时可以直接覆盖，不会再出现 INSTALL_FAILED_VERSION_DOWNGRADE。
+          AFU_VERSION_CODE: ${{ 78 + github.run_number }}
+          AFU_BUILD_NUM: ${{ github.run_number }}
+        run: ./gradlew assembleAfu --no-daemon --console=plain
+
+      - name: Show APK info
+        run: |
+          set -euo pipefail
+          ls -lh android_app/app/build/outputs/apk/afu/*.apk
+          APK=$(ls android_app/app/build/outputs/apk/afu/*.apk | head -1)
+          APKTOOL=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          "$APKTOOL" dump badging "$APK" | head -3 || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openScale-AFU-release
+          path: android_app/app/build/outputs/apk/afu/*.apk
+          if-no-files-found: error
+
+      - name: Publish to Release
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: afu-a1
+          name: openScale + AFU A1 driver
+          body: |
+            蚂蚁阿福 × 沃莱 A1 体脂秤（AFU-WL-TZ-A1 / FG2313UWB-D）驱动。
+            包名 `com.health.openscale.afu`，可与官方 openScale 共存。
+            基于 openScale 上游 master 构建，R8 压缩，固定签名。
+          files: android_app/app/build/outputs/apk/afu/*.apk

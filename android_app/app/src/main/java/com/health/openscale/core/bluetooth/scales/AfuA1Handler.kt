@@ -92,6 +92,13 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // Anything before 2020 is a decoding artefact, not a stored measurement.
         private const val MIN_PLAUSIBLE_EPOCH = 1_600_000_000L
 
+        // Fallback recognition. The firmware normally advertises as "AFU-WL-TZ-A1", but a
+        // renamed advertisement or a packet that carries no name yet would make the scale
+        // invisible to the strict prefix check. These are the extra nets, in decreasing
+        // order of confidence. The MAC is this unit's static-random address.
+        private val KNOWN_ADDRESSES = setOf("D0:5C:00:3D:B6:D3")
+        private val BRAND_TOKENS = listOf("AFU", "WL", "TZ")
+
         private fun uuid16Static(short: Int): UUID =
             UUID.fromString(String.format("0000%04x-0000-1000-8000-00805f9b34fb", short))
     }
@@ -112,12 +119,20 @@ class AfuA1Handler : ScaleDeviceHandler() {
 
     override fun supportFor(device: ScannedDeviceInfo): DeviceSupport? {
         val name = device.name.trim().uppercase(Locale.ROOT)
-        val nameMatch = name.startsWith("AFU-WL")
         val serviceMatch = device.serviceUuids.any { it == SERVICE }
 
-        // Require the distinctive name prefix; a bare 0xFFB0 service is shared by many
-        // unrelated scales (MGB/Taylor/BIA) so we must not claim on service alone.
-        if (!nameMatch) return null
+        // Three independent ways to recognise the scale, strongest first:
+        //  1. broadcast name prefix - the firmware's normal advertising name
+        //  2. exact MAC             - survives a firmware rename, or an advertisement that
+        //                             arrives without a name yet
+        //  3. 0xFFB0 service plus a brand token in the name
+        // A bare 0xFFB0 service must never be enough on its own: MGB / Taylor / generic BIA
+        // boards share that service, and claiming them would break scales that already work.
+        val nameMatch = name.startsWith("AFU-WL")
+        val addressMatch = device.address.uppercase(Locale.ROOT) in KNOWN_ADDRESSES
+        val serviceAndBrand = serviceMatch && BRAND_TOKENS.any { name.contains(it) }
+
+        if (!nameMatch && !addressMatch && !serviceAndBrand) return null
 
         val caps = setOf(
             DeviceCapability.BODY_COMPOSITION,

@@ -29,7 +29,9 @@ android {
         applicationId = "com.health.openscale"
         minSdk = 31
         targetSdk = 37
-        versionCode = 78
+        // AFU build: CI passes AFU_VERSION_CODE so every published APK can be installed
+        // over the previous one. Falls back to the upstream value for local builds.
+        versionCode = System.getenv("AFU_VERSION_CODE")?.toIntOrNull() ?: 78
         versionName = "3.1.4"
 
         manifestPlaceholders["appName"] = "openScale"
@@ -89,6 +91,25 @@ android {
                 project.logger.warn("OSS signing information not fully loaded from properties. Ensure it's set via environment variables or the properties file is correct.")
             }
         }
+
+        // ------------------------------------------------------------------
+        // AFU A1 自定义构建签名。
+        // 只从环境变量读取，密钥不进仓库（本仓库是 public fork）。
+        // 由 .github/workflows/build-afu.yml 在编译前把 AFU_KEYSTORE_BASE64
+        // 解码成临时文件，再通过环境变量指过来。
+        // ------------------------------------------------------------------
+        create("afu") {
+            val ksPath = System.getenv("AFU_KEYSTORE_PATH").orEmpty()
+            if (ksPath.isNotEmpty() && File(ksPath).exists()) {
+                storeFile = file(ksPath)
+                storeType = "PKCS12"
+                keyAlias = System.getenv("AFU_KEY_ALIAS") ?: "afu"
+                keyPassword = System.getenv("AFU_KEY_PASSWORD")
+                storePassword = System.getenv("AFU_STORE_PASSWORD")
+            } else {
+                project.logger.warn("AFU signing keystore not configured (AFU_KEYSTORE_PATH unset). The 'afu' build type will be unsigned.")
+            }
+        }
     }
 
     buildTypes {
@@ -132,6 +153,20 @@ android {
             manifestPlaceholders["appName"] = "openScale"
             manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher_beta"
             manifestPlaceholders["appRoundIcon"] = "@mipmap/ic_launcher_beta_round"
+        }
+
+        // ------------------------------------------------------------------
+        // AFU A1 正式构建。
+        // - 独立 applicationId（.afu），可与官方 openScale 共存，永不被其上架更新覆盖
+        // - 继承 release：R8 + 资源压缩 + 正式图标
+        // - 用固定 keystore 签名，后续版本可直接覆盖升级，无需卸载
+        // ------------------------------------------------------------------
+        create("afu") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("afu")
+            applicationIdSuffix = ".afu"
+            versionNameSuffix = "-afu" + (System.getenv("AFU_BUILD_NUM")?.let { ".$it" } ?: "")
+            manifestPlaceholders["appName"] = "openScale AFU"
         }
     }
 
