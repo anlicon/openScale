@@ -32,11 +32,15 @@ data class TopBarAction(
     @param:StringRes val contentDescriptionResId: Int? = null,
     val contentDescription: String? = null,
     val tint: Color? = null,
-    val dropdownContent: (@Composable () -> Unit)? = null,
     /**
      * Short status text rendered next to the icon. Only use it for a transient phase the user
      * has to react to (scanning, waiting for the scale to be stepped on); a permanent label
      * would crowd the title. `null` renders the plain icon-only button.
+     *
+     * Keep this parameter before [dropdownContent]: the latter is frequently supplied as a
+     * trailing lambda (`TopBarAction(...) { DropdownMenu(...) }`), which only binds to the
+     * last parameter. Appending a new parameter after it breaks every such call site.
      */
-    val label: String? = null
+    val label: String? = null,
+    val dropdownContent: (@Composable () -> Unit)? = null
 )

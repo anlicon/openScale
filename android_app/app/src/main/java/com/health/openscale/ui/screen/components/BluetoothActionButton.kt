@@ -90,6 +90,11 @@ fun rememberBluetoothActionButton(
     // as a tint, so the connection state stays readable from the icon itself.
     val developerModeTint = MaterialTheme.colorScheme.error.takeIf { developerMode }
 
+    // Theme colours must be read here: the `when` below lives inside `remember { }`, which is a
+    // plain (non-@Composable) lambda, so MaterialTheme cannot be dereferenced there.
+    val busyTint = MaterialTheme.colorScheme.primary
+    val failureTint = MaterialTheme.colorScheme.error
+
     /** Keeps the action's own description and only appends the developer-mode note for screen readers. */
     fun withDeveloperNote(description: String): String =
         if (developerMode) "$description – ${resources.getString(R.string.developer_mode_active_icon_desc)}"
@@ -139,7 +144,7 @@ fun rememberBluetoothActionButton(
             //    adapter parks the link, so say what is happening instead of only spinning.
             isBusy -> TopBarAction(
                 icon = Icons.AutoMirrored.Filled.BluetoothSearching,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = busyTint,
                 label = resources.getString(
                     if (isConnecting) R.string.bt_status_searching else R.string.bt_status_disconnecting
                 ),
@@ -180,7 +185,7 @@ fun rememberBluetoothActionButton(
             //    on the scale. Show it as an actionable phase instead.
             connStatus == ConnectionStatus.BROADCAST_LISTENING -> TopBarAction(
                 icon = Icons.AutoMirrored.Filled.BluetoothSearching,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = busyTint,
                 label = resources.getString(R.string.bt_status_waiting_for_scale),
                 contentDescription = resources.getString(R.string.bt_info_step_on_scale),
                 onClick = {
@@ -212,7 +217,7 @@ fun rememberBluetoothActionButton(
             //    instead of silently falling back to the same grey "not connected" glyph as idle.
             connStatus == ConnectionStatus.FAILED -> TopBarAction(
                 icon = Icons.Filled.BluetoothDisabled,
-                tint = MaterialTheme.colorScheme.error,
+                tint = failureTint,
                 contentDescription = resources.getString(R.string.bluetooth_action_retry_connection_desc, deviceName),
                 onClick = {
                     sharedViewModel.showSnackbar(
