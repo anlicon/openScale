@@ -186,6 +186,11 @@ class AfuA1Handler : ScaleDeviceHandler() {
         }
 
         userInfo(R.string.bt_info_step_on_scale)
+        // Reuse the on-screen wording, which already says "barefoot": the BIA channels only
+        // work skin-to-electrode, so socks would still give a weight-only record. Announced
+        // here rather than after the first frame so the user hears it the moment the link
+        // comes up, while they are still walking up to the scale.
+        SpeechAnnouncer.speak(R.string.bt_info_step_on_scale)
     }
 
     override fun onNotification(characteristic: UUID, data: ByteArray, user: ScaleUser) {
