@@ -83,11 +83,15 @@ jobs:
       - name: Build afu APK
         working-directory: android_app
         env:
+          BUILD_NUM: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
           # 78 是上游基线 versionCode；加 run_number 保证每次构建都比上一版大，
           # 装新包时可以直接覆盖，不会再出现 INSTALL_FAILED_VERSION_DOWNGRADE。
-          AFU_VERSION_CODE: ${{ 78 + github.run_number }}
-          AFU_BUILD_NUM: ${{ github.run_number }}
-        run: ./gradlew assembleAfu --no-daemon --console=plain
+          export AFU_VERSION_CODE=$((78 + BUILD_NUM))
+          export AFU_BUILD_NUM="$BUILD_NUM"
+          echo "versionCode=$AFU_VERSION_CODE build=$AFU_BUILD_NUM"
+          ./gradlew assembleAfu --no-daemon --console=plain
 
       - name: Show APK info
         run: |
