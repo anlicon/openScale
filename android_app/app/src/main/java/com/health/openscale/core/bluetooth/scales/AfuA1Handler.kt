@@ -27,6 +27,7 @@ import com.health.openscale.core.data.Kg
 import com.health.openscale.core.data.MeasurementType
 import com.health.openscale.core.data.Ohm
 import com.health.openscale.core.data.Percent
+import com.health.openscale.core.speech.SpeechAnnouncer
 import com.health.openscale.core.service.ScannedDeviceInfo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -221,11 +222,13 @@ class AfuA1Handler : ScaleDeviceHandler() {
             // The BIA channels stay empty for another 10-20 s after the weight settles. Without
             // a word from the app that silence looks like a hang, so say what is being waited on.
             userInfo(R.string.bt_info_hold_still_for_body_composition)
+            SpeechAnnouncer.speak(R.string.speech_measuring_body_fat)
             publishJob = scope.launch {
                 delay(IMPEDANCE_WAIT_MS.milliseconds)
                 if (!published) {
                     logI("AfuA1: impedance wait timed out - publishing weight only")
                     userWarn(R.string.bt_warn_impedance_timeout)
+                    SpeechAnnouncer.speak(R.string.speech_body_fat_timeout)
                     doPublish(user)
                 }
             }
@@ -288,6 +291,12 @@ class AfuA1Handler : ScaleDeviceHandler() {
         }
         logI("AfuA1: publishing ${String.format(Locale.US, "%.2f", weightKg)}kg" +
             (resistance?.let { ", R=${it}Ω" } ?: " (weight only)"))
+        // Weight only on purpose: body composition is still being validated on this hardware,
+        // and a wrong body-fat number read out loud is worse than no number at all.
+        SpeechAnnouncer.speak(
+            R.string.speech_weight_result,
+            String.format(Locale.getDefault(), "%.1f", weightKg)
+        )
         publish(measurement)
         // Release the scale immediately: while a link is open it stops advertising, so
         // holding it would break the next scan.

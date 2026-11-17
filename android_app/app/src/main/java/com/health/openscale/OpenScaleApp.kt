@@ -24,6 +24,7 @@ import androidx.work.Configuration
 import com.health.openscale.core.data.MeasurementType
 import com.health.openscale.core.database.DatabaseRepository
 import com.health.openscale.core.facade.SettingsFacade
+import com.health.openscale.core.speech.SpeechAnnouncer
 import com.health.openscale.core.utils.LogManager
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -52,6 +53,7 @@ class OpenScaleApp : Application(), Configuration.Provider {
         super.onCreate()
 
         initializeLogging()
+        initializeSpeech()
         initializeDefaultData()
     }
 
@@ -67,6 +69,14 @@ class OpenScaleApp : Application(), Configuration.Provider {
             LogManager.init(applicationContext, isFileLoggingEnabled)
             LogManager.i(TAG, "LogManager initialized. File logging enabled: $isFileLoggingEnabled")
         }
+    }
+
+    /**
+     * Wires the voice announcer to the persisted setting. The engine itself is created lazily on
+     * the first announcement, so this costs nothing for users who keep the feature off.
+     */
+    private fun initializeSpeech() {
+        SpeechAnnouncer.initialize(applicationContext, settingsFacade.speechOnMeasurement)
     }
 
     private fun initializeDefaultData() {

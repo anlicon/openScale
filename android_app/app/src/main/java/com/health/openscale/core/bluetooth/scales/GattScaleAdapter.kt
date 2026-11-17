@@ -28,6 +28,7 @@ import com.health.openscale.core.bluetooth.data.ScaleUser
 import com.health.openscale.core.facade.MeasurementFacade
 import com.health.openscale.core.facade.SettingsFacade
 import com.health.openscale.core.facade.UserFacade
+import com.health.openscale.core.speech.SpeechAnnouncer
 import com.health.openscale.core.utils.LogManager
 import com.welie.blessed.BluetoothCentralManager
 import com.welie.blessed.BluetoothCentralManagerCallback
@@ -491,6 +492,8 @@ class GattScaleAdapter(
                     address
                 )
             )
+            // The user is most likely standing next to the scale, not reading the phone.
+            SpeechAnnouncer.speak(R.string.bt_info_step_on_scale)
             runCatching { central.autoConnect(peripheral, peripheralCallback) }
                 .onFailure { LogManager.e(TAG, "autoConnect failed for $address: ${it.message}", it) }
         }

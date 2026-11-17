@@ -658,6 +658,13 @@
     <string name="settings_haptics_label">Vibration on new measurement</string>
     <string name="settings_haptics_enabled_snackbar">Vibration on measurements enabled</string>
     <string name="settings_haptics_disabled_snackbar">Vibration on measurements disabled</string>
+    <string name="settings_speech_label">Speak connection and measurement status</string>
+    <string name="settings_speech_summary">Announces what the scale is waiting for and the measured weight</string>
+    <string name="settings_speech_enabled_snackbar">Voice announcements enabled</string>
+    <string name="settings_speech_disabled_snackbar">Voice announcements disabled</string>
+    <string name="speech_weight_result">Weight %1$s kilograms</string>
+    <string name="speech_measuring_body_fat">Weight recorded. Stand still, measuring body composition.</string>
+    <string name="speech_body_fat_timeout">No body composition received. Weight saved.</string>
     <!-- Chart Settings Screen -->
     <string name="setting_show_chart_points">Show data points</string>
     <string name="setting_show_chart_goal_lines">Show goal lines</string>

@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -115,6 +116,7 @@ fun GeneralSettingsScreen(
     val currentLanguageCode by sharedViewModel.appLanguageCode.collectAsState(initial = null)
     var expandedLanguageMenu by remember { mutableStateOf(false) }
     val hapticsEnabled by sharedViewModel.hapticOnMeasurement.collectAsState(initial = false)
+    val speechEnabled by sharedViewModel.speechOnMeasurement.collectAsState(initial = true)
     val useDynamicColor by sharedViewModel.useDynamicColor.collectAsState(initial = false)
     val useHighContrast by sharedViewModel.useHighContrast.collectAsState(initial = false)
     val usePureBlack by sharedViewModel.usePureBlack.collectAsState(initial = false)
@@ -415,6 +417,30 @@ fun GeneralSettingsScreen(
                             resources.getString(R.string.settings_haptics_enabled_snackbar)
                         else
                             resources.getString(R.string.settings_haptics_disabled_snackbar)
+                    )
+                }
+            }
+        )
+
+        SettingsGroup(
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.RecordVoiceOver,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            title = stringResource(R.string.settings_speech_label),
+            summary = stringResource(R.string.settings_speech_summary),
+            checked = speechEnabled,
+            onCheckedChange = { enabled ->
+                scope.launch {
+                    sharedViewModel.setSpeechOnMeasurement(enabled)
+                    sharedViewModel.showSnackbar(
+                        if (enabled)
+                            resources.getString(R.string.settings_speech_enabled_snackbar)
+                        else
+                            resources.getString(R.string.settings_speech_disabled_snackbar)
                     )
                 }
             }

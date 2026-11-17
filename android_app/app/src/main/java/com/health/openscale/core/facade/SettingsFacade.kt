@@ -73,6 +73,7 @@ object SettingsPreferenceKeys {
     val CURRENT_USER_ID = intPreferencesKey("current_user_id")
     val APP_LANGUAGE_CODE = stringPreferencesKey("app_language_code")
     val HAPTIC_ON_MEASUREMENT = booleanPreferencesKey("haptic_on_measurement")
+    val SPEECH_ON_MEASUREMENT = booleanPreferencesKey("speech_on_measurement")
     val USE_DYNAMIC_COLOR = booleanPreferencesKey("use_dynamic_color")
     val USE_HIGH_CONTRAST = booleanPreferencesKey("use_high_contrast")
     val USE_PURE_BLACK = booleanPreferencesKey("use_pure_black")
@@ -177,6 +178,9 @@ interface SettingsFacade {
 
     val hapticOnMeasurement: Flow<Boolean>
     suspend fun setHapticOnMeasurement(value: Boolean)
+
+    val speechOnMeasurement: Flow<Boolean>
+    suspend fun setSpeechOnMeasurement(value: Boolean)
 
     val useDynamicColor: Flow<Boolean>
     suspend fun setUseDynamicColor(enabled: Boolean)
@@ -399,6 +403,19 @@ class SettingsFacadeImpl @Inject constructor(
     override suspend fun setHapticOnMeasurement(value: Boolean) {
         LogManager.d(TAG, "Setting hapticOnMeasurement to: $value")
         saveSetting(SettingsPreferenceKeys.HAPTIC_ON_MEASUREMENT.name, value)
+    }
+
+    override val speechOnMeasurement: Flow<Boolean> = observeSetting(
+        SettingsPreferenceKeys.SPEECH_ON_MEASUREMENT.name,
+        true
+    ).catch { exception ->
+        LogManager.e(TAG, "Error observing speechOnMeasurement", exception)
+        emit(true)
+    }
+
+    override suspend fun setSpeechOnMeasurement(value: Boolean) {
+        LogManager.d(TAG, "Setting speechOnMeasurement to: $value")
+        saveSetting(SettingsPreferenceKeys.SPEECH_ON_MEASUREMENT.name, value)
     }
 
     override val useDynamicColor: Flow<Boolean> = observeSetting(

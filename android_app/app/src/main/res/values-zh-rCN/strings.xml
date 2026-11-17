@@ -337,6 +337,13 @@
     <string name="settings_haptics_label">新测量时振动</string>
     <string name="settings_haptics_enabled_snackbar">测量时振动已启用</string>
     <string name="settings_haptics_disabled_snackbar">测量时振动已禁用</string>
+    <string name="settings_speech_label">语音播报连接与测量状态</string>
+    <string name="settings_speech_summary">播报秤正在等待什么，以及测出的体重</string>
+    <string name="settings_speech_enabled_snackbar">语音播报已启用</string>
+    <string name="settings_speech_disabled_snackbar">语音播报已关闭</string>
+    <string name="speech_weight_result">体重 %1$s 公斤</string>
+    <string name="speech_measuring_body_fat">体重已记录，请站住不动，正在测量体脂</string>
+    <string name="speech_body_fat_timeout">没有收到体脂数据，只保存了体重</string>
     <string name="setting_show_chart_points">显示数据点</string>
     <string name="setting_show_chart_goal_lines">显示目标线</string>
     <string name="setting_smoothing_algorithm">平滑算法</string>
