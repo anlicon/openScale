@@ -93,6 +93,19 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // Anything before 2020 is a decoding artefact, not a stored measurement.
         private const val MIN_PLAUSIBLE_EPOCH = 1_600_000_000L
 
+        // Below this the scale no longer has the headroom to drive the BIA current, and a
+        // weigh-in typically degrades to weight-only. Warn before the user wastes a session.
+        private const val LOW_BATTERY_PERCENT = 20
+
+        // How many 0xD5 frames must agree before the status byte is trusted as a charge
+        // level rather than a progress bar.
+        private const val BATTERY_SAMPLE_MIN = 4
+        private const val BATTERY_SAMPLE_SPREAD = 3
+
+        // Delay before the low-battery announcement, long enough for "stand barefoot on the
+        // scale" to finish playing.
+        private const val BATTERY_NOTICE_DELAY_MS = 4_000L
+
         // Fallback recognition. The firmware normally advertises as "AFU-WL-TZ-A1", but a
         // renamed advertisement or a packet that carries no name yet would make the scale
         // invisible to the strict prefix check. These are the extra nets, in decreasing
@@ -114,9 +127,21 @@ class AfuA1Handler : ScaleDeviceHandler() {
     @Volatile private var published = false
     private var publishJob: Job? = null
     private var watchdogJob: Job? = null
+    private var batteryNoticeJob: Job? = null
 
     /** Epoch seconds of the current session, used to separate live data from stored records. */
     private var sessionStartEpochSec = 0L
+
+    // Charge level reported in the 0xD5 status byte. Some firmware variants put a weighing
+    // progress bar into the same byte, so the value is only adopted once several frames in
+    // the same weigh-in agree on it - a real charge level barely moves, a progress bar
+    // swings. Confirming it also lets the timeout path name the real cause of a failed
+    // body-composition read.
+    @Volatile private var batteryMin = Int.MAX_VALUE
+    @Volatile private var batteryMax = Int.MIN_VALUE
+    @Volatile private var batterySampleCount = 0
+    @Volatile private var batteryConfirmed = false
+    @Volatile private var lowBatteryConfirmed = false
 
     override fun supportFor(device: ScannedDeviceInfo): DeviceSupport? {
         val name = device.name.trim().uppercase(Locale.ROOT)
@@ -219,8 +244,9 @@ class AfuA1Handler : ScaleDeviceHandler() {
             "AfuA1: weight ${String.format(Locale.US, "%.2f", w.weightKg)}kg " +
                 "stable=${w.stable} mode=${w.mode} alg=0x${w.algType.toString(16)}" +
                 (w.batteryPercent?.let { " batt=$it%" } ?: "") +
-                (w.progressPercent?.let { " progress=$it%" } ?: "")
+                (if (w.charging == true) " charging" else "")
         )
+        w.batteryPercent?.let { onBatterySample(it, w.charging == true) }
         // Impedance normally follows the stable weight; arm a short timeout so a bare
         // weight-only scale (or a failed impedance read) still produces a measurement.
         if (w.stable && publishJob == null) {
@@ -233,9 +259,56 @@ class AfuA1Handler : ScaleDeviceHandler() {
                 if (!published) {
                     logI("AfuA1: impedance wait timed out - publishing weight only")
                     userWarn(R.string.bt_warn_impedance_timeout)
-                    SpeechAnnouncer.speak(R.string.speech_body_fat_timeout)
+                    // A nearly flat cell cannot hold the BIA excitation current, which is the
+                    // usual reason a weigh-in ends up weight-only. Name the real culprit
+                    // instead of blaming a generic timeout.
+                    if (lowBatteryConfirmed) {
+                        SpeechAnnouncer.speak(R.string.speech_low_battery_no_body_fat)
+                    } else {
+                        SpeechAnnouncer.speak(R.string.speech_body_fat_timeout)
+                    }
                     doPublish(user)
                 }
+            }
+        }
+    }
+
+    /**
+     * Interprets the status byte of a 0xD5 frame as a charge level.
+     *
+     * The same byte doubles as a weighing progress bar on some firmware, so one frame proves
+     * nothing: the value is adopted only after [BATTERY_SAMPLE_MIN] frames agree within
+     * [BATTERY_SAMPLE_SPREAD] percent. The flat cell seen in the field reported a constant
+     * 10 %, which is the signature of a charge level rather than a moving progress bar.
+     */
+    private fun onBatterySample(percent: Int, charging: Boolean) {
+        if (percent !in 0..100) return
+
+        if (!batteryConfirmed) {
+            batterySampleCount++
+            if (percent < batteryMin) batteryMin = percent
+            if (percent > batteryMax) batteryMax = percent
+            if (batterySampleCount < BATTERY_SAMPLE_MIN) return
+            if (batteryMax - batteryMin > BATTERY_SAMPLE_SPREAD) {
+                logI("AfuA1: status byte moves $batteryMin..$batteryMax - treating it as progress, not battery")
+                batteryConfirmed = true
+                return
+            }
+            batteryConfirmed = true
+            logI("AfuA1: scale battery ~$percent%${if (charging) " (charging)" else ""}")
+            if (percent > LOW_BATTERY_PERCENT || charging) return
+            lowBatteryConfirmed = true
+            // Say it once per session: the scale keeps streaming the same byte every frame,
+            // and repeating the warning would talk over the measurement prompts.
+            userWarn(R.string.bt_warn_low_battery, percent)
+            // The charge level arrives about half a second after connecting, while "stand
+            // barefoot on the scale" is still being spoken. Hold the warning back so the two
+            // do not cut each other off, and drop it entirely once the user already stepped
+            // on - the result announcement is more useful by then.
+            batteryNoticeJob?.cancel()
+            batteryNoticeJob = scope.launch {
+                delay(BATTERY_NOTICE_DELAY_MS.milliseconds)
+                if (!lastWeightStable) SpeechAnnouncer.speak(R.string.speech_low_battery)
             }
         }
     }
@@ -403,10 +476,17 @@ class AfuA1Handler : ScaleDeviceHandler() {
         publishJob = null
         watchdogJob?.cancel()
         watchdogJob = null
+        batteryNoticeJob?.cancel()
+        batteryNoticeJob = null
         lastWeightKg = null
         lastWeightStable = false
         lastResistances = emptyList()
         published = false
+        batteryMin = Int.MAX_VALUE
+        batteryMax = Int.MIN_VALUE
+        batterySampleCount = 0
+        batteryConfirmed = false
+        lowBatteryConfirmed = false
     }
 
     override fun onDisconnected() {

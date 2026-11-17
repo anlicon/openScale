@@ -67,12 +67,6 @@ object AfuA1Lib {
             val stable: Boolean,
             val batteryPercent: Int?,
             val charging: Boolean?,
-            /**
-             * mode 2 streams a 0..100 value that jumps around during a weigh-in; on real
-             * hardware it moves 100 -> 10 -> 100 within one second, so it is the measuring
-             * progress, not the battery level.
-             */
-            val progressPercent: Int?,
             val mode: Int,
             val algType: Int,
         ) : ScaleEvent()
@@ -208,15 +202,17 @@ object AfuA1Lib {
 
         var battery: Int? = null
         var charging: Boolean? = null
-        var progress: Int? = null
         if (mode == 1 && p.size >= 9) {
             charging = bit(p[7].toInt() and 0xFF, 7) == 1
             battery = p[7].toInt() and 0x7F
         } else if (mode == 2 && p.size >= 11) {
-            // mode 2 does not carry the battery level: the byte that looks like it counts
-            // 0..100 and swings back and forth while the load cell settles.
+            // mode 2 packs the charge level into the last status byte as well: bit 7 is the
+            // charging flag, the low seven bits are the charge in percent (same layout as the
+            // mode 1 branch, just at a different offset because mode 2 carries a capability
+            // bitfield first). This used to be read as a "measuring progress" and the charge
+            // level was thrown away, which is why a flat scale could never be diagnosed.
             charging = bit(p[10].toInt() and 0xFF, 7) == 1
-            progress = p[10].toInt() and 0x7F
+            battery = p[10].toInt() and 0x7F
         }
 
         val wf = weightFields(encoded)
@@ -227,7 +223,6 @@ object AfuA1Lib {
             stable = wf.state,
             batteryPercent = battery,
             charging = charging,
-            progressPercent = progress,
             mode = mode,
             algType = if (p.size >= 2) p[p.size - 2].toInt() and 0xFF else 0,
         )

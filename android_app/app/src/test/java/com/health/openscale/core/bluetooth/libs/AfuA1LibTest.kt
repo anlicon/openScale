@@ -71,7 +71,8 @@ class AfuA1LibTest {
         body18[2] = ((stableEncoded ushr 8) and 0xFF).toByte()
         body18[3] = (stableEncoded and 0xFF).toByte()
         body18[4] = 2                    // payload[5] = mode
-        body18[5] = 40                   // battery 40%, not charging
+        // payload[10] (charging flag in bit 7, charge level in bits 0..6) maps from body18[9]
+        body18[9] = 40                   // battery 40%, not charging
         // payload[16]=alg_type, payload[17]=unit -> body18[15], body18[16]
         body18[15] = 41
         body18[16] = AfuA1Lib.PACKET_WEIGHT.toByte()
