@@ -666,6 +666,7 @@
     <string name="settings_speech_disabled_snackbar">Voice announcements disabled</string>
     <string name="settings_speech_enabled_hint">Voice feedback on. If you hear nothing, check the system “Text-to-speech” engine and its Chinese voice data.</string>
     <string name="speech_sample">Voice feedback is on</string>
+    <string name="speech_measurement_done">Measurement complete</string>
     <string name="speech_weight_result">Weight %1$s kilograms</string>
     <string name="speech_measuring_body_fat">Weight recorded. Stand still, measuring body composition.</string>
     <string name="speech_body_fat_timeout">No body composition received. Weight saved.</string>

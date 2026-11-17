@@ -345,6 +345,7 @@
     <string name="settings_speech_disabled_snackbar">语音播报已关闭</string>
     <string name="settings_speech_enabled_hint">已开启语音播报。如果听不到声音，请检查系统“文字转语音”引擎与中文语音包。</string>
     <string name="speech_sample">语音播报已开启</string>
+    <string name="speech_measurement_done">测量完毕</string>
     <string name="speech_weight_result">体重 %1$s 公斤</string>
     <string name="speech_measuring_body_fat">体重已记录，请站住不动，正在测量体脂</string>
     <string name="speech_body_fat_timeout">没有收到体脂数据，只保存了体重</string>

@@ -291,9 +291,10 @@ class AfuA1Handler : ScaleDeviceHandler() {
         }
         logI("AfuA1: publishing ${String.format(Locale.US, "%.2f", weightKg)}kg" +
             (resistance?.let { ", R=${it}Ω" } ?: " (weight only)"))
-        // Weight only on purpose: body composition is still being validated on this hardware,
-        // and a wrong body-fat number read out loud is worse than no number at all.
-        SpeechAnnouncer.speak(
+        // Announce completion first, then the weight, in one ordered sequence. Two plain
+        // speak() calls would flush each other (the engine uses QUEUE_FLUSH for status updates).
+        SpeechAnnouncer.speakSequence(
+            R.string.speech_measurement_done,
             R.string.speech_weight_result,
             String.format(Locale.getDefault(), "%.1f", weightKg)
         )

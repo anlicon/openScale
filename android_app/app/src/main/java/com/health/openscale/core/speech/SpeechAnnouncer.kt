@@ -116,6 +116,35 @@ object SpeechAnnouncer {
         speak(text)
     }
 
+    /**
+     * Speaks two sentences in order. The normal [speak] path uses QUEUE_FLUSH so the newest
+     * status always wins, which would cut the first sentence off the moment the second one is
+     * submitted. Measurement completion is the one place where both matter, so the second
+     * utterance is appended with QUEUE_ADD instead.
+     */
+    fun speakSequence(@StringRes first: Int, @StringRes second: Int, vararg args: Any) {
+        val context = appContext ?: return
+        val texts = listOfNotNull(
+            runCatching { context.getString(first) }.getOrNull(),
+            runCatching { context.getString(second, *args) }.getOrNull(),
+        )
+        if (texts.isEmpty()) return
+        scope.launch {
+            if (!enabled || !usable) return@launch
+            if (!engineRequested) requestEngine()
+            if (!ready || engine == null) {
+                texts.forEach { text ->
+                    if (pending.size >= MAX_PENDING) pending.removeFirst()
+                    pending.addLast(text)
+                }
+                return@launch
+            }
+            texts.forEachIndexed { index, text ->
+                utter(text, if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD)
+            }
+        }
+    }
+
     /** Creates the engine without speaking, e.g. so the settings screen can probe it. */
     fun ensureEngine() {
         if (!engineRequested) requestEngine()
@@ -247,11 +276,11 @@ object SpeechAnnouncer {
         if (enabled) queued.forEach { utter(it) }
     }
 
-    private fun utter(text: String) {
+    private fun utter(text: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH) {
         val tts = engine ?: return
         val id = "afu-speech-" + utteranceCounter.incrementAndGet()
         val result = runCatching {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+            tts.speak(text, queueMode, null, id)
         }.getOrElse {
             LogManager.w(TAG, "speak() failed: ${it.message}")
             TextToSpeech.ERROR
