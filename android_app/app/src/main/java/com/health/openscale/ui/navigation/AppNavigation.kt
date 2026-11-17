@@ -21,6 +21,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -417,12 +418,44 @@ fun AppNavigation(sharedViewModel: SharedViewModel) {
                             topBarActions.forEach { action ->
                                 val contentDesc = action.contentDescriptionResId?.let { stringResource(id = it) }
                                     ?: action.contentDescription
-                                IconButton(onClick = action.onClick) {
-                                    Icon(
-                                        imageVector = action.icon,
-                                        contentDescription = contentDesc,
-                                        tint = action.tint ?: LocalContentColor.current
-                                    )
+                                val actionTint = action.tint ?: LocalContentColor.current
+                                val actionLabel = action.label
+                                // An action that carries a label renders as a compact icon+text
+                                // pill instead of an icon-only button: while a BLE connection is
+                                // in a phase the user has to act on, the word matters more than
+                                // the glyph.
+                                if (actionLabel == null) {
+                                    IconButton(onClick = action.onClick) {
+                                        Icon(
+                                            imageVector = action.icon,
+                                            contentDescription = contentDesc,
+                                            tint = actionTint
+                                        )
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .padding(start = 4.dp)
+                                            .clip(RoundedCornerShape(50))
+                                            .clickable(onClick = action.onClick)
+                                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = action.icon,
+                                            contentDescription = contentDesc,
+                                            tint = actionTint,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            text = actionLabel,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = actionTint,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                                 // If the action has associated dropdown content, invoke it here.
                                 // This allows TopAppBar actions to also host DropdownMenus.

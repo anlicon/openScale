@@ -178,6 +178,9 @@
     <string name="bluetooth_action_disconnect_desc">从%1$s断开连接</string>
     <string name="bluetooth_action_connect_to_desc">连接到%1$s</string>
     <string name="bluetooth_action_check_settings_desc">检查蓝牙设置</string>
+    <string name="bt_status_searching">扫描中</string>
+    <string name="bt_status_waiting_for_scale">等待上秤</string>
+    <string name="bt_status_disconnecting">断开中</string>
     <string name="snackbar_bluetooth_connecting_to">正在连接到%1$s…</string>
     <string name="snackbar_bluetooth_disconnecting_from">正在从%1$s断开连接…</string>
     <string name="snackbar_bluetooth_processing_with">正在与%1$s处理…</string>
@@ -426,6 +429,8 @@
     <string name="dialog_bt_label_consent_code">确认码</string>
     <string name="dialog_bt_enter_valid_code_prompt">请输入有效代码。</string>
     <string name="bt_info_step_on_scale">请赤脚站在秤上</string>
+    <string name="bt_info_hold_still_for_body_composition">已记录体重，请赤脚站立不动，正在测量体脂…</string>
+    <string name="bt_warn_impedance_timeout">未收到体脂数据，仅保存体重。</string>
     <string name="bt_info_register_new_user_started">正在秤上创建新用户…</string>
     <string name="bt_info_no_mapping_creating_user">未找到用户映射；正在秤上创建新用户…</string>
     <string name="bt_info_waiting_for_measurements">正在通过通知等待测量。</string>

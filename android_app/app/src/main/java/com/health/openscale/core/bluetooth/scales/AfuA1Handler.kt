@@ -218,10 +218,14 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // Impedance normally follows the stable weight; arm a short timeout so a bare
         // weight-only scale (or a failed impedance read) still produces a measurement.
         if (w.stable && publishJob == null) {
+            // The BIA channels stay empty for another 10-20 s after the weight settles. Without
+            // a word from the app that silence looks like a hang, so say what is being waited on.
+            userInfo(R.string.bt_info_hold_still_for_body_composition)
             publishJob = scope.launch {
                 delay(IMPEDANCE_WAIT_MS.milliseconds)
                 if (!published) {
                     logI("AfuA1: impedance wait timed out - publishing weight only")
+                    userWarn(R.string.bt_warn_impedance_timeout)
                     doPublish(user)
                 }
             }

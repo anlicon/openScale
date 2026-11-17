@@ -346,6 +346,11 @@
     <string name="bluetooth_action_error_check_settings_desc">Bluetooth error, check settings</string>
     <string name="bluetooth_action_connect_to_desc">Connect to %1$s</string>
     <string name="bluetooth_action_check_settings_desc">Check Bluetooth settings</string>
+    <!-- Short status labels shown right next to the top-bar Bluetooth icon, so the
+         connection phase is readable without opening settings or waiting for a snackbar. -->
+    <string name="bt_status_searching">Searching</string>
+    <string name="bt_status_waiting_for_scale">Step on</string>
+    <string name="bt_status_disconnecting">Closing</string>
     <string name="snackbar_bluetooth_connecting_to">Connecting to %1$s…</string>
     <string name="snackbar_bluetooth_disconnecting_from">Disconnecting from %1$s…</string>
     <string name="snackbar_bluetooth_processing_with">Processing with %1$s…</string>
@@ -870,6 +875,9 @@
     <string name="saved_measurements_message">Saved %1$d measurements</string>
     <!-- General info -->
     <string name="bt_info_step_on_scale">Please step barefoot on the scale</string>
+    <!-- Shown once the weight settles but the impedance frames have not arrived yet. -->
+    <string name="bt_info_hold_still_for_body_composition">Weight received — keep standing barefoot, measuring body composition…</string>
+    <string name="bt_warn_impedance_timeout">No body composition data received — saving weight only.</string>
     <!-- Mapping / consent flows -->
     <string name="bt_info_using_existing_mapping">Using existing mapping: app user %1$d ↔ scale slot %2$d.</string>
     <string name="bt_info_consent_needed">Please enter the consent code for slot %1$d.</string>

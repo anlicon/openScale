@@ -32,5 +32,11 @@ data class TopBarAction(
     @param:StringRes val contentDescriptionResId: Int? = null,
     val contentDescription: String? = null,
     val tint: Color? = null,
-    val dropdownContent: (@Composable () -> Unit)? = null
+    val dropdownContent: (@Composable () -> Unit)? = null,
+    /**
+     * Short status text rendered next to the icon. Only use it for a transient phase the user
+     * has to react to (scanning, waiting for the scale to be stepped on); a permanent label
+     * would crowd the title. `null` renders the plain icon-only button.
+     */
+    val label: String? = null
 )

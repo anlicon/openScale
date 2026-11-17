@@ -99,13 +99,50 @@ fun rememberBluetoothActionButton(
         val savedAddr = savedDevice?.address
         val deviceName = savedDevice?.name ?: resources.getString(R.string.fallback_device_name_saved_scale)
 
-        val isBusy = savedAddr != null &&
-                (connStatus == ConnectionStatus.CONNECTING || connStatus == ConnectionStatus.DISCONNECTING)
+        // Single connect path, shared by the idle state and the retry-after-failure state so both
+        // behave identically (permissions, adapter enable, assisted weighing, snackbar).
+        val startConnect: () -> Unit = {
+            val hasScanPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+            val hasConnectPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            val hasAllPermissions = hasScanPerm && hasConnectPerm
+
+            if (!hasAllPermissions) {
+                permissionsLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.BLUETOOTH_SCAN,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    )
+                )
+            } else if (!bluetoothViewModel.isBluetoothEnabled()) {
+                enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            } else if (currentUser?.useAssistedWeighing == true) {
+                // Trigger the global dialog via SharedViewModel
+                sharedViewModel.setPendingReferenceUserForBle(null)
+                sharedViewModel.setPendingAssistedWeighingUser(currentUser)
+            } else {
+                sharedViewModel.showSnackbar(
+                    message = resources.getString(R.string.snackbar_bluetooth_attempting_connection, deviceName),
+                    duration = SnackbarDuration.Short
+                )
+                LogManager.d(TAG, "User clicked bluetooth icon connect → trying to connect to saved device $deviceName")
+                sharedViewModel.setPendingReferenceUserForBle(null)
+                bluetoothViewModel.connectToSavedDevice()
+            }
+        }
+
+        val isConnecting = connStatus == ConnectionStatus.CONNECTING
+        val isDisconnecting = connStatus == ConnectionStatus.DISCONNECTING
+        val isBusy = savedAddr != null && (isConnecting || isDisconnecting)
 
         when {
-            // 1. Connection in progress
+            // 1. Handshake in progress. The scan window runs for a few seconds before the
+            //    adapter parks the link, so say what is happening instead of only spinning.
             isBusy -> TopBarAction(
                 icon = Icons.AutoMirrored.Filled.BluetoothSearching,
+                tint = MaterialTheme.colorScheme.primary,
+                label = resources.getString(
+                    if (isConnecting) R.string.bt_status_searching else R.string.bt_status_disconnecting
+                ),
                 contentDescription = resources.getString(R.string.bluetooth_action_connecting_disconnecting_desc),
                 onClick = {
                     sharedViewModel.showSnackbar(
@@ -136,7 +173,25 @@ fun rememberBluetoothActionButton(
                 }
             )
 
-            // 3. Already connected -> Disconnect on click
+            // 3. The link is parked: the scan window elapsed without seeing an advertisement, so
+            //    the adapter switched to a suspended connect that fires the moment the scale wakes
+            //    up. This state used to fall through to the idle branch and paint the icon grey,
+            //    which reads as "not connected / failed" exactly when the user is supposed to step
+            //    on the scale. Show it as an actionable phase instead.
+            connStatus == ConnectionStatus.BROADCAST_LISTENING -> TopBarAction(
+                icon = Icons.AutoMirrored.Filled.BluetoothSearching,
+                tint = MaterialTheme.colorScheme.primary,
+                label = resources.getString(R.string.bt_status_waiting_for_scale),
+                contentDescription = resources.getString(R.string.bt_info_step_on_scale),
+                onClick = {
+                    sharedViewModel.showSnackbar(
+                        message = resources.getString(R.string.bt_info_step_on_scale),
+                        duration = SnackbarDuration.Long
+                    )
+                }
+            )
+
+            // 4. Already connected -> Disconnect on click
             connStatus == ConnectionStatus.CONNECTED -> TopBarAction(
                 icon = Icons.Filled.BluetoothConnected,
                 tint = developerModeTint,
@@ -153,45 +208,29 @@ fun rememberBluetoothActionButton(
                 }
             )
 
-            // 4. Disconnected -> Request permissions/enable BT/connect
+            // 5. The last attempt failed. Keep the failure visible (red icon) and retry in place,
+            //    instead of silently falling back to the same grey "not connected" glyph as idle.
+            connStatus == ConnectionStatus.FAILED -> TopBarAction(
+                icon = Icons.Filled.BluetoothDisabled,
+                tint = MaterialTheme.colorScheme.error,
+                contentDescription = resources.getString(R.string.bluetooth_action_retry_connection_desc, deviceName),
+                onClick = {
+                    sharedViewModel.showSnackbar(
+                        message = resources.getString(R.string.snackbar_bluetooth_retry_connection, deviceName),
+                        duration = SnackbarDuration.Short
+                    )
+                    startConnect()
+                }
+            )
+
+            // 6. Idle -> Request permissions/enable BT/connect
             else -> TopBarAction(
                 icon = Icons.Filled.BluetoothDisabled,
                 tint = developerModeTint,
                 contentDescription = withDeveloperNote(
                     resources.getString(R.string.bluetooth_action_disconnect_desc, deviceName)
                 ),
-                onClick = {
-                    // Check for BOTH permissions (Scan and Connect)
-                    val hasScanPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
-                    val hasConnectPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-
-                    val hasAllPermissions = hasScanPerm && hasConnectPerm
-
-                    if (!hasAllPermissions) {
-                        // Launch request for both permissions at once
-                        permissionsLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.BLUETOOTH_SCAN,
-                                Manifest.permission.BLUETOOTH_CONNECT
-                            )
-                        )
-                    } else if (!bluetoothViewModel.isBluetoothEnabled()) {
-                        enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-                    } else if (currentUser?.useAssistedWeighing == true) {
-                        // Trigger the global dialog via SharedViewModel
-                        sharedViewModel.setPendingReferenceUserForBle(null)
-                        sharedViewModel.setPendingAssistedWeighingUser(currentUser)
-                    } else {
-                        sharedViewModel.showSnackbar(
-                            message = resources.getString(R.string.snackbar_bluetooth_attempting_connection, deviceName),
-                            duration = SnackbarDuration.Short
-                        )
-                        LogManager.d(TAG, "User clicked bluetooth icon connect → trying to connect to saved device $deviceName")
-
-                        sharedViewModel.setPendingReferenceUserForBle(null)
-                        bluetoothViewModel.connectToSavedDevice()
-                    }
-                }
+                onClick = startConnect
             )
         }
     }
