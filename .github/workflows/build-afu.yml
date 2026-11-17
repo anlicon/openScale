@@ -5,8 +5,9 @@
 #   - R8 + 资源压缩（继承 release），正式图标
 #   - 固定 keystore 签名，后续版本可直接覆盖升级
 #
-# 需要的仓库 Secret：
-#   AFU_KEYSTORE_BASE64  - 固定签名密钥库（PKCS12）的 base64，别名 afu，密码 afuA1os2026
+# 需要的仓库 Secret（都已配置）：
+#   AFU_KEYSTORE_BASE64  - 固定签名密钥库（PKCS12）的 base64，别名 afu
+#   AFU_STORE_PASSWORD   - 上述密钥库的密码（PKCS12 的 key 密码与 store 密码相同）
 #   未配置时会退回临时密钥并打 warning，此时产物无法覆盖升级，仅用于验证。
 name: Build openScale AFU (release)
 
@@ -52,26 +53,29 @@ jobs:
       - name: Prepare signing key
         env:
           KS_B64: ${{ secrets.AFU_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.AFU_STORE_PASSWORD }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/ks"
           KS="$RUNNER_TEMP/ks/afu.keystore"
-          if [ -n "${KS_B64:-}" ]; then
+          if [ -n "${KS_B64:-}" ] && [ -n "${KS_PASS:-}" ]; then
             printf '%s' "$KS_B64" | base64 -d > "$KS"
-            echo "::notice title=签名::使用仓库固定密钥，本包可覆盖升级"
+            keytool -list -keystore "$KS" -storepass "$KS_PASS" > /dev/null
+            echo "::notice title=签名::使用仓库固定密钥（PKCS12 校验通过），本包可覆盖升级"
           else
-            echo "::warning title=签名::AFU_KEYSTORE_BASE64 未配置，使用临时密钥，此包无法覆盖升级"
+            echo "::warning title=签名::AFU_KEYSTORE_BASE64 / AFU_STORE_PASSWORD 未配齐，使用临时密钥，此包无法覆盖升级"
+            KS_PASS="temp-$RANDOM$RANDOM-temp"
             keytool -genkeypair -keystore "$KS" -storetype PKCS12 \
               -keyalg RSA -keysize 2048 -validity 10950 -alias afu \
-              -storepass afuA1os2026 -keypass afuA1os2026 \
+              -storepass "$KS_PASS" -keypass "$KS_PASS" \
               -dname "CN=Temp AFU Build, O=AFU, C=CN"
           fi
-          keytool -list -keystore "$KS" -storepass afuA1os2026 | tail -3
+          keytool -list -keystore "$KS" -storepass "$KS_PASS" | tail -3
           {
             echo "AFU_KEYSTORE_PATH=$KS"
             echo "AFU_KEY_ALIAS=afu"
-            echo "AFU_KEY_PASSWORD=afuA1os2026"
-            echo "AFU_STORE_PASSWORD=afuA1os2026"
+            echo "AFU_KEY_PASSWORD=$KS_PASS"
+            echo "AFU_STORE_PASSWORD=$KS_PASS"
           } >> "$GITHUB_ENV"
 
       # 单测先跑；失败不阻断出包，但会在日志和步骤结论里标红，便于事后修。
