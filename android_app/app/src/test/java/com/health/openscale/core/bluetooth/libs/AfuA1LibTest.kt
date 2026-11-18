@@ -88,7 +88,7 @@ class AfuA1LibTest {
         val result = decoder.feed(packet)
         assertThat(result.status).isEqualTo(AfuA1Lib.FeedStatus.PERFECT)
         assertThat(result.events).hasSize(1)
-        val w = result.events[0] as ScaleEvent.Weight
+        val w = result.events[0] as AfuA1Lib.ScaleEvent.Weight
         assertThat(w.weightKg).isWithin(0.05).of(70.0)
         assertThat(w.stable).isTrue()
         assertThat(w.batteryPercent).isEqualTo(40)
