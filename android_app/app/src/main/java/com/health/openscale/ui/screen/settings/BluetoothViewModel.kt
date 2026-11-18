@@ -61,7 +61,7 @@ class BluetoothViewModel @Inject constructor(
         // A body-fat scale only advertises for a few seconds after it is stepped on, and it
         // stays silent entirely while it believes a BLE link is open. 45 s was too easy to
         // miss; two minutes gives the user time to read the hint and step on the scale.
-        private const val SCAN_DURATION_MS = 120_000L
+        private const val SCAN_DURATION_MS = 45_000L
     }
 
     // --- Exposed state from facade ---

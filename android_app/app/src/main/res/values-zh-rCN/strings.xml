@@ -349,8 +349,9 @@
     <string name="speech_weight_result">体重 %1$s 公斤</string>
     <string name="speech_measuring_body_fat">体重已记录，请站住不动，正在测量体脂</string>
     <string name="speech_body_fat_timeout">没有收到体脂数据，只保存了体重</string>
-    <string name="speech_low_battery">秤电量低，请更换电池，否则可能无法完成测量</string>
-    <string name="speech_low_battery_no_body_fat">秤电量低，没有测出体脂，请更换电池后重新测量</string>
+    <string name="speech_low_battery">秤电量低，请及时充电，否则可能无法完成测量</string>
+    <string name="speech_low_battery_no_body_fat">秤电量低，没有测出体脂，请充电后重新测量</string>
+    <string name="bt_warn_low_battery_charge">秤电量低 (%1$d%%)，请及时充电。</string>
     <string name="setting_show_chart_points">显示数据点</string>
     <string name="setting_show_chart_goal_lines">显示目标线</string>
     <string name="setting_smoothing_algorithm">平滑算法</string>

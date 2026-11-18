@@ -88,9 +88,9 @@ class BluetoothViewModelTest {
     fun requestStartDeviceScan_whenEnabled_startsScanWithConfiguredDuration() {
         fake.bluetoothEnabled = true
         vm.requestStartDeviceScan()
-        // 120 s, not the old 20 s: these scales only advertise for a few seconds after being
-        // woken up, so a short window regularly missed them completely.
-        assertThat(fake.startScanDurationMs).isEqualTo(120_000L)
+        // 45 s: long enough to walk to the scale, short enough that a failed scan does not
+        // keep the radio busy for two minutes.
+        assertThat(fake.startScanDurationMs).isEqualTo(45_000L)
     }
 
     // ---- delegation -------------------------------------------------------------------------

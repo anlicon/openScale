@@ -670,8 +670,9 @@
     <string name="speech_weight_result">Weight %1$s kilograms</string>
     <string name="speech_measuring_body_fat">Weight recorded. Stand still, measuring body composition.</string>
     <string name="speech_body_fat_timeout">No body composition received. Weight saved.</string>
-    <string name="speech_low_battery">Scale battery is low. Replace the batteries, otherwise the measurement may fail.</string>
-    <string name="speech_low_battery_no_body_fat">Scale battery is low, so body composition failed. Replace the batteries and try again.</string>
+    <string name="speech_low_battery">Scale battery is low. Please charge it, otherwise the measurement may fail.</string>
+    <string name="speech_low_battery_no_body_fat">Scale battery is low, so body composition failed. Please charge the scale and try again.</string>
+    <string name="bt_warn_low_battery_charge">Scale battery is low (%1$d%%). Please charge it.</string>
     <!-- Chart Settings Screen -->
     <string name="setting_show_chart_points">Show data points</string>
     <string name="setting_show_chart_goal_lines">Show goal lines</string>

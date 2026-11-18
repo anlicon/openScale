@@ -300,7 +300,7 @@ class AfuA1Handler : ScaleDeviceHandler() {
             lowBatteryConfirmed = true
             // Say it once per session: the scale keeps streaming the same byte every frame,
             // and repeating the warning would talk over the measurement prompts.
-            userWarn(R.string.bt_warn_low_battery, percent)
+            userWarn(R.string.bt_warn_low_battery_charge, percent)
             // The charge level arrives about half a second after connecting, while "stand
             // barefoot on the scale" is still being spoken. Hold the warning back so the two
             // do not cut each other off, and drop it entirely once the user already stepped

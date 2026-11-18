@@ -38,6 +38,7 @@ import com.welie.blessed.GattStatus
 import com.welie.blessed.HciStatus
 import com.welie.blessed.WriteType
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -84,6 +85,9 @@ class GattScaleAdapter(
     // Peripheral of a link that is being torn down. Kept so doDisconnect() can cancel a
     // connection the stack still holds when currentPeripheral is already null.
     private var pendingPeripheral: BluetoothPeripheral? = null
+
+    // Caps the discovery phase of a connect attempt (see doConnect).
+    private var scanPhaseJob: Job? = null
 
     init {
         // Worker coroutine processes queued BLE operations sequentially
@@ -134,6 +138,8 @@ class GattScaleAdapter(
             scope.launch {
                 currentPeripheral = peripheral
                 pendingPeripheral = null
+                scanPhaseJob?.cancel()
+                scanPhaseJob = null
                 _isConnected.value = true
                 _isConnecting.value = false
                 _events.tryEmit(BluetoothEvent.Connected(peripheral.name, peripheral.address))
@@ -396,6 +402,8 @@ class GattScaleAdapter(
 
         connectAttempts = 0
         pendingPeripheral = null
+        scanPhaseJob?.cancel()
+        scanPhaseJob = null
         _isConnected.value = false
         _isConnecting.value = true
 
@@ -416,6 +424,27 @@ class GattScaleAdapter(
                 )
                 cleanup()
                 return@launch
+            }
+
+            // A scale that never advertises keeps this scan (and the "scanning" label) alive
+            // for as long as the phone is in range, so the user sits in front of a spinner
+            // with no way out. Cap the discovery phase and report a real failure instead.
+            scanPhaseJob?.cancel()
+            scanPhaseJob = launch {
+                delay(tuning.scanPhaseTimeoutMs.milliseconds)
+                if (_isConnected.value || !_isConnecting.value) return@launch
+                LogManager.w(
+                    TAG,
+                    "No advertisement for $address within ${tuning.scanPhaseTimeoutMs} ms - giving up"
+                )
+                runCatching { central.stopScan() }
+                _events.tryEmit(
+                    BluetoothEvent.ConnectionFailed(
+                        address,
+                        context.getString(R.string.bt_error_no_device_found)
+                    )
+                )
+                cleanup()
             }
         }
     }
@@ -438,6 +467,8 @@ class GattScaleAdapter(
     }
 
     override fun doDisconnect() {
+        scanPhaseJob?.cancel()
+        scanPhaseJob = null
         runCatching { if (::central.isInitialized) central.stopScan() }
         // currentPeripheral can already be null while the stack still holds the link, so fall
         // back to the peripheral remembered by the teardown path.
