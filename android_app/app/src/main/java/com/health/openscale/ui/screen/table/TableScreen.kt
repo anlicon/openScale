@@ -653,7 +653,18 @@ fun TableScreen(
 
     // Keyed on selectedKeys itself, not its size: swapping which two rows are picked has to
     // refresh the compare action's timestamps.
-    LaunchedEffect(tableScreenTitle, isInSelectionMode, selectedKeys, tableDataSnapshot, aggregatedItems.size) {
+    //
+    // bluetoothAction MUST be a key. rememberBluetoothActionButton() returns a fresh TopBarAction
+    // (new icon + label snapshot) whenever the connection status changes, but TopBarAction is a
+    // plain data class stored in a StateFlow: without re-running this effect, the top bar keeps
+    // rendering the stale icon captured at the last data change. That made the Bluetooth glyph
+    // show "disconnected"/"searching" after a successful connect until some unrelated table data
+    // happened to change and re-fired the effect — hence the "only sometimes wrong" symptom.
+    // OverviewScreen does the same by listing bluetoothAction in its DisposableEffect keys.
+    LaunchedEffect(
+        tableScreenTitle, isInSelectionMode, selectedKeys, tableDataSnapshot,
+        aggregatedItems.size, bluetoothAction
+    ) {
         sharedViewModel.setContextualSelectionMode(isInSelectionMode)
         if (isInSelectionMode) {
             sharedViewModel.setTopBarTitle(

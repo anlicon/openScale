@@ -72,23 +72,19 @@ class AfuA1Handler : ScaleDeviceHandler() {
         // on a later frame. So this is not just "wait for the first 0xD6" - we keep the
         // session open until a frame with a usable resistance shows up, and only give up
         // (weight-only) after this long.
-        private const val IMPEDANCE_WAIT_MS = 20_000L
+        private const val IMPEDANCE_WAIT_MS = 15_000L
 
         // This scale stops advertising while a BLE link is open. If a session never
         // completes (the user never steps on, or steps off before the weight stabilises)
         // the link would otherwise be held forever and every later scan would find
         // nothing. Always release the scale after this long.
-        private const val CONNECT_TIMEOUT_MS = 60_000L
+        private const val CONNECT_TIMEOUT_MS = 30_000L
 
         // 0xD8 records the scale pushes on connect. The same record is repeated a few times
         // per session, and it is pushed again on every later session, so imported keys are
         // remembered across sessions (driver settings) and skipped when seen again.
         private const val HISTORY_KEY_PREF = "importedHistory"
         private const val HISTORY_KEY_LIMIT = 40
-
-        // A record stamped inside this window is the weigh-in being streamed live right now;
-        // importing it as well would create a second row for the same event.
-        private const val HISTORY_LIVE_WINDOW_S = 180L
 
         // Anything before 2020 is a decoding artefact, not a stored measurement.
         private const val MIN_PLAUSIBLE_EPOCH = 1_600_000_000L
@@ -128,9 +124,6 @@ class AfuA1Handler : ScaleDeviceHandler() {
     private var publishJob: Job? = null
     private var watchdogJob: Job? = null
     private var batteryNoticeJob: Job? = null
-
-    /** Epoch seconds of the current session, used to separate live data from stored records. */
-    private var sessionStartEpochSec = 0L
 
     // Charge level reported in the 0xD5 status byte. Some firmware variants put a weighing
     // progress bar into the same byte, so the value is only adopted once several frames in
@@ -177,7 +170,6 @@ class AfuA1Handler : ScaleDeviceHandler() {
     override fun onConnected(user: ScaleUser) {
         resetSession()
         decoder.reset()
-        sessionStartEpochSec = System.currentTimeMillis() / 1000L
 
         // 1) Subscribe to the measurement stream.
         setNotifyOn(SERVICE, CHAR_NOTIFY)
@@ -358,7 +350,11 @@ class AfuA1Handler : ScaleDeviceHandler() {
         published = true
         val measurement = ScaleMeasurement().apply {
             userId = user.id
-            dateTime = Date()
+            // Align to whole seconds, the same precision the scale stores in its 0xD8 history
+            // records. The database deduplicates on (userId, timestamp); a millisecond here
+            // would never match the whole-second history copy of the same weigh-in, so the
+            // same event could be stored twice once that copy is pushed on a later connect.
+            dateTime = Date(System.currentTimeMillis() / 1000L * 1000L)
             this[MeasurementType.WEIGHT] = Kg(weightKg.toFloat())
         }
 
@@ -397,12 +393,6 @@ class AfuA1Handler : ScaleDeviceHandler() {
             logW("AfuA1: history with implausible timestamp ${h.timeSeconds} - ignored")
             return
         }
-        // The record currently being weighed belongs to the live stream.
-        if (h.timeSeconds >= sessionStartEpochSec - HISTORY_LIVE_WINDOW_S) {
-            logI("AfuA1: history ${h.timeSeconds} is the current session - live stream covers it")
-            return
-        }
-
         val key = "${h.timeSeconds}:${h.weightG}"
         if (isHistoryImported(key)) {
             logI("AfuA1: history $key already imported - skipped")

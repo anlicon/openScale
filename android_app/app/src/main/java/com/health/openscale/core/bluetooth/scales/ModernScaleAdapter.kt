@@ -88,10 +88,9 @@ data class BleGattTuning(
     val operationTimeoutMs: Long = 1000,
     // How long the address scan may run before the connect attempt is abandoned and the UI
     // is told the scale was not found. A scale that never advertises would otherwise keep the
-    // "scanning" state alive forever, with no way out but a manual retry. 45 s covers the
-    // walk from unlocking the phone to stepping on the scale, and stops burning the radio
-    // afterwards.
-    val scanPhaseTimeoutMs: Long = 45_000,
+    // "scanning" state alive forever, with no way out but a manual retry. 30 s covers stepping
+    // on the scale to wake it, and stops burning the radio afterwards.
+    val scanPhaseTimeoutMs: Long = 30_000,
     // Deprecated: the autoConnect hand-over was removed - parking a pending autoConnect hid
     // the "scale not found" case behind an endless spinner. Kept so the type stays stable.
     val useAutoConnectFallback: Boolean = false

@@ -90,7 +90,7 @@ class BluetoothViewModelTest {
         vm.requestStartDeviceScan()
         // 45 s: long enough to walk to the scale, short enough that a failed scan does not
         // keep the radio busy for two minutes.
-        assertThat(fake.startScanDurationMs).isEqualTo(45_000L)
+        assertThat(fake.startScanDurationMs).isEqualTo(30_000L)
     }
 
     // ---- delegation -------------------------------------------------------------------------
